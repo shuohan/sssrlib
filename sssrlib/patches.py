@@ -8,6 +8,9 @@ import math
 import numpy as np
 from enum import IntEnum
 from image_processing_3d import permute3d
+from collections.abc import Iterable
+
+from .transform import Identity
 
 
 class Dim(IntEnum):
@@ -51,6 +54,13 @@ class Patches(_AbstractPatches):
 
     where ``coords`` corresponds to the x, y, z starts of the patch.
 
+    Args:
+        patch_size (int or tuple[int]): The size of the output patch. If
+            its type is :class:`tuple`, the length should be 3. If it is an
+            integer, it is assumed to be a 2D patch with the same size along x
+            and y axes. To get 1D patches, its last two elements should be 1.
+            To get 2D patches, its last one elements should be 1.
+
     Attributes:
         im (numpy.ndarray): The image to get patches from.
         patch_size (tuple[int]): The parsed patch size.
@@ -61,48 +71,30 @@ class Patches(_AbstractPatches):
         z (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the z-axis in the result image.
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
-            output image patch.
-        dim (int or Dim): The dimension of the output patch.
-
-    Args:
-        patch_size (int or tuple[int]): The size of the output patch. If
-            :class:`tuple`, the length should be 3 and the last few (2 for 1D,
-            and 1 for 2D, and 0 for 3D) elements should be 1.
+            output image patch. If empty, :class:`sssrlib.transform.Identity`
+            will be used.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[], dim=1):
-        self.dim = Dim(dim) if type(dim) is int else dim
+    def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[]):
         self.im, self._xinv, self._yinv, self._zinv = permute3d(im, x, y, z)
         self.patch_size = self._parse_patch_size(patch_size)
-        self.transforms = transforms
-
+        self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
 
-    def _parse_patch_size(self, patch_size, dim):
+    def _parse_patch_size(self, patch_size):
         """Converts :class:`int` patch size to :class:`tuple`."""
-        if type(patch_size) is int:
-            patch_size = (self.patch_size, ) * self.dim.value
-            patch_size += (1, ) * (3 - self.dim.value)
-        if self._patch_size_is_correct(patch_size)
-            message = ('Incorrect "patch_size" %s. The length of "patch_size" '
-                       'should be 3. If 1D/2D patches are desired, use 1s in '
-                       'the last few dimensions.') % str(patch_size)
-            raise RuntimeError(message)
+        if not isinstance(patch_size, Iterable):
+            patch_size = (patch_size, ) * 2 + (1, )
+        assert len(patch_size) == 3
         return patch_size
-
-    def _patch_size_is_correct(self, patch_size):
-        result = (len(patch) == 3)
-        for i in range(3 - self.dim.value):
-            result = result and (patch_size[-1 - i] == 1)
-        return result
 
     def _init_patch_numbers(self):
         """Calculates the possible numbers of patches along x, y, and z."""
-        return tuple(s - ps for s, ps in zip(self.im.shape, self.patch_size))
+        return [s - ps + 1 for s, ps in zip(self.im.shape, self.patch_size)]
 
     def __len__(self):
         """Returns the number of patches"""
@@ -119,8 +111,8 @@ class Patches(_AbstractPatches):
         
         """
         tind, x, y, z = self._unravel_index(ind)
-        bbox = tuple(slice(s, s + p) for s in zip((x, y, z), self.patch_size))
-        return self.transforms[tind].transform(self.im[boox])
+        loc = tuple(slice(s, s + p) for s, p in zip((x, y, z), self.patch_size))
+        return self.transforms[tind](self.im[loc])
 
     def _unravel_index(self, ind):
         """Converts the flattened index into transform index and array coords.
@@ -133,8 +125,8 @@ class Patches(_AbstractPatches):
 
         """
         shape = [len(self.transforms), self._xnum, self._ynum, self._znum]
-        xind, yind, zind = np.unravel_index(ind, shape)
-        return xind, yind, zind
+        tind, xind, yind, zind = np.unravel_index(ind, shape)
+        return tind, xind, yind, zind
 
 
 class PatchesOr(_AbstractPatches):
