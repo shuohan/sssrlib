@@ -4,7 +4,6 @@ TODO:
     Add :attr:`Patches.patch_gaps`.
 
 """
-import math
 import numpy as np
 from enum import IntEnum
 from image_processing_3d import permute3d
@@ -74,17 +73,20 @@ class Patches(_AbstractPatches):
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
         squeeze (bool): If ``True``, squeeze sampled patches.
+        expand_channel_dim (bool): If ``True``, expand a channel dimension in
+                before the 0th dimension.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
     def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[],
-                 squeeze=True):
+                 squeeze=True, expand_channel_dim=True):
         self.im, self._xinv, self._yinv, self._zinv = permute3d(im, x, y, z)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.squeeze = squeeze
+        self.expand_channel_dim = expand_channel_dim
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
 
@@ -117,6 +119,7 @@ class Patches(_AbstractPatches):
         loc = tuple(slice(s, s + p) for s, p in zip((x, y, z), self.patch_size))
         patch = self.transforms[tind](self.im[loc])
         patch = patch.squeeze() if self.squeeze else patch
+        patch = patch[None, ...] if self.expand_channel_dim else patch
         return patch
 
     def _unravel_index(self, ind):
@@ -149,10 +152,9 @@ class PatchesOr(_AbstractPatches):
         self.patches = list(patches)
         self._nums = [len(p) for p in self.patches]
         self._cumsum = np.cumsum(self._nums)
-        self._len = math.prod(self._nums)
 
     def __len__(self):
-        return self._len
+        return self._cumsum[-1]
 
     def __getitem__(self, ind):
         pind = np.digitize(ind, self._nums)
