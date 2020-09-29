@@ -73,15 +73,18 @@ class Patches(_AbstractPatches):
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
+        squeeze (bool): If ``True``, squeeze sampled patches.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[]):
+    def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[],
+                 squeeze=True):
         self.im, self._xinv, self._yinv, self._zinv = permute3d(im, x, y, z)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
+        self.squeeze = squeeze
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
 
@@ -108,11 +111,13 @@ class Patches(_AbstractPatches):
 
         Returns:
             numpy.ndarray: The returned tensor.
-        
+
         """
         tind, x, y, z = self._unravel_index(ind)
         loc = tuple(slice(s, s + p) for s, p in zip((x, y, z), self.patch_size))
-        return self.transforms[tind](self.im[loc])
+        patch = self.transforms[tind](self.im[loc])
+        patch = patch.squeeze() if self.squeeze else patch
+        return patch
 
     def _unravel_index(self, ind):
         """Converts the flattened index into transform index and array coords.
