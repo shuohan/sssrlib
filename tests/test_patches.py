@@ -94,15 +94,19 @@ def test_patches():
     assert np.array_equal(patch, image[31:31+ps2d[0], 3:3+ps2d[1], 61:61+ps2d[2]])
     assert len(patches_2d) == 8 * 41 * 46 * 121
 
+
     # together
     patches_2d = Patches(image, 64, x=2, y=0, z=1, transforms=transforms,
+                         scale_factor=scale_factor, mode='linear',
                          squeeze=False, expand_channel_dim=False)
     image_trans = np.transpose(image, [2, 0, 1])
-    assert np.array_equal(image_trans, patches_2d.image)
-    patch = patches_2d[1314000]
-    patch = np.rot90(patch, k=1, axes=(0, 1))
-    assert np.array_equal(patch, image_trans[46:110, 22:86, 0:1])
-    assert len(patches_2d) == 8 * 58 * 37 * 90
+    ref_image = interpolate(torch.tensor(image_trans)[None, None, ...],
+                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
+    ref_image = ref_image.squeeze()
+    patch = patches_2d[3637383]
+    patch = torch.rot90(patch, -1)
+    assert len(patches_2d) == 8 * 457 * 37 * 90
+    assert torch.allclose(patch, ref_image[178:178+64, 11:11+64, 33:34])
 
     # corner cases
     image_shape = (4, 2, 3)
