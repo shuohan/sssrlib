@@ -78,7 +78,7 @@ class Patches(_AbstractPatches):
         self.x, self.y, self.z = (x, y, z)
         self.scale_factor = scale_factor
         self.mode = mode
-        self.image = self._proc_image(image)
+        self.image = self._proc_image(torch.tensor(image).float().contiguous())
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.scale_factor = scale_factor
@@ -99,12 +99,12 @@ class Patches(_AbstractPatches):
         """Interpolates the image along the x-axis."""
         orig_shape = image.shape
         image = torch.tensor(image).float()
-        image = image.permute(2, 1, 0).contiguous()
-        image = image.view(-1, 1, orig_shape[0])
+        image = image.permute(2, 1, 0)
+        image = image.reshape(-1, 1, orig_shape[0])
         image = interp(image, scale_factor=self.scale_factor, mode=self.mode)
         result_shape = (orig_shape[2], orig_shape[1], -1)
-        image = image.view(*result_shape)
-        image = image.permute(2, 1, 0).contiguous()
+        image = image.reshape(*result_shape)
+        image = image.permute(2, 1, 0)
         return image
 
     def _parse_patch_size(self, patch_size):

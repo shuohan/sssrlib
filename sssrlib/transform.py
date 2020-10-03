@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 def create_rot_flip():
@@ -69,7 +70,7 @@ class Rot90(Transform):
         self.axes = (0, 1)
 
     def transform(self, patch):
-        return np.rot90(patch, self.k, self.axes)
+        return rot90(patch, self.k, self.axes)
 
     def __str__(self):
         message = 'rotation by %d degrees in %s plane'
@@ -91,10 +92,10 @@ class Flip(Transform):
     def __init__(self, axis=0):
         super().__init__()
         # self.axis = axis
-        self.axis = 0
+        self.axis = (0, )
 
     def transform(self, patch):
-        return np.flip(patch, axis=self.axis)
+        return flip(patch, axis=self.axis)
 
     def __str__(self):
         return 'flip along %s axis' % str(self.axis)
@@ -122,38 +123,36 @@ class Compose(Transform):
         return result
 
 
-# import torch
-#
-# def rot90(array, k=0, axes=(0, 1)):
-#     """Rotates an array by 90``k`` degrees in the plane specified by ``axes``.
-#
-#     Args:
-#         array (numpy.ndarray or torch.Tensor): The array to rotate.
-#         k (int): The number of 90 degrees to rotate.
-#         axes (tuple[int]): The plane to rotate the array in.
-#
-#     Returns:
-#         numpy.ndarray or torch.Tensor: The rotated array.
-#
-#     """
-#     if type(array) is np.ndarray:
-#         return np.rot90(array, k, axes)
-#     elif type(array) is torch.Tensor:
-#         return torch.rot90(array, k, axes)
-#
-#
-# def flip(array, axis=0):
-#     """Flips an array along an axis.
-#
-#     Args:
-#         array (numpy.ndarray or torch.Tensor): The array to flip.
-#         axis (int or tuple[int]): The axis/axes to flip.
-#
-#     Returns:
-#         numpy.ndarray or torch.Tensor: The flipped array.
-#
-#     """
-#     if type(array) is np.ndarray:
-#         return np.flip(arary, axis)
-#     elif type(array) is torch.Tensor:
-#         return torch.flip(array, axis)
+def rot90(array, k=0, axes=(0, 1)):
+    """Rotates an array by 90``k`` degrees in the plane specified by ``axes``.
+
+    Args:
+        array (numpy.ndarray or torch.Tensor): The array to rotate.
+        k (int): The number of 90 degrees to rotate.
+        axes (tuple[int]): The plane to rotate the array in.
+
+    Returns:
+        numpy.ndarray or torch.Tensor: The rotated array.
+
+    """
+    if type(array) is np.ndarray:
+        return np.rot90(array, k, axes)
+    elif type(array) is torch.Tensor:
+        return torch.rot90(array, k, axes)
+
+
+def flip(array, axis=0):
+    """Flips an array along an axis.
+
+    Args:
+        array (numpy.ndarray or torch.Tensor): The array to flip.
+        axis (int or tuple[int]): The axis/axes to flip.
+
+    Returns:
+        numpy.ndarray or torch.Tensor: The flipped array.
+
+    """
+    if type(array) is np.ndarray:
+        return np.flip(arary, axis)
+    elif type(array) is torch.Tensor:
+        return torch.flip(array, axis)

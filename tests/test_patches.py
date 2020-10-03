@@ -121,6 +121,8 @@ def test_patches():
     assert np.array_equal(patch, image[1:, :, :])
     assert len(patches) == 2
 
+    print('successful')
+
 
 if __name__ == '__main__':
     test_patches()
