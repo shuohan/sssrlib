@@ -118,6 +118,10 @@ class Patches(_AbstractPatches):
         """Calculates the possible numbers of patches along x, y, and z."""
         return [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
 
+    def cuda(self):
+        """Puts patches into GPU."""
+        self.image = self.image.cuda()
+
     def __len__(self):
         """Returns the number of patches"""
         return self._len

@@ -99,8 +99,9 @@ def test_patches():
     patches_2d = Patches(image, 64, x=2, y=0, z=1, transforms=transforms,
                          scale_factor=scale_factor, mode='linear',
                          squeeze=False, expand_channel_dim=False)
+    patches_2d.cuda()
     image_trans = np.transpose(image, [2, 0, 1])
-    ref_image = interpolate(torch.tensor(image_trans)[None, None, ...],
+    ref_image = interpolate(torch.tensor(image_trans).cuda()[None, None, ...],
                             scale_factor=(scale_factor, 1, 1), mode='trilinear')
     ref_image = ref_image.squeeze()
     patch = patches_2d[3637383]
