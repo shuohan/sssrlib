@@ -5,25 +5,13 @@ TODO:
 
 """
 import numpy as np
+import torch
+from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
-from collections.abc import Iterable
+from torch.nn.functional import interpolate as interp
 
 from .transform import Identity
-
-
-class Dim(IntEnum):
-    """The dimension of an array.
-
-    Attributes:
-        ONE (int): Correspond to 1D arrays.
-        TWO (int): Correspond to 2D arrays.
-        THREE (int): Correspond to 3D arrays.
-
-    """
-    ONE = 1
-    TWO = 2
-    THREE = 3
 
 
 class _AbstractPatches:
@@ -61,7 +49,7 @@ class Patches(_AbstractPatches):
             To get 2D patches, its last one elements should be 1.
 
     Attributes:
-        im (numpy.ndarray): The image to get patches from.
+        image (numpy.ndarray): The image to get patches from.
         patch_size (tuple[int]): The parsed patch size.
         x (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the x-axis in the result image.
@@ -72,6 +60,10 @@ class Patches(_AbstractPatches):
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
+        scale_factor (float): The scale factor of :attr:`image` along
+            the x-axis dimension after permutation.
+        mode (str): The interpolation mode for
+            :func:`torch.nn.functional.interpolate`.
         squeeze (bool): If ``True``, squeeze sampled patches.
         expand_channel_dim (bool): If ``True``, expand a channel dimension in
                 before the 0th dimension.
@@ -80,15 +72,40 @@ class Patches(_AbstractPatches):
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, im, patch_size, x=0, y=1, z=2, transforms=[],
+    def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
+                 scale_factor=1, mode='linear',
                  squeeze=True, expand_channel_dim=True):
-        self.im, self._xinv, self._yinv, self._zinv = permute3d(im, x, y, z)
+        self.x, self.y, self.z = (x, y, z)
+        self.scale_factor = scale_factor
+        self.mode = mode
+        self.image = self._proc_image(image)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
+        self.scale_factor = scale_factor
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
+
+    def _proc_image(self, image):
+        """Permutes the input image and interpolates along the x-axis (0th)."""
+        image, self._xinv, self._yinv, self._zinv \
+            = permute3d(image, self.x, self.y, self.z)
+        if self.scale_factor != 1:
+            image = self._interp_image(image)
+        return image
+
+    def _interp_image(self, image):
+        """Interpolates the image along the x-axis."""
+        orig_shape = image.shape
+        image = torch.tensor(image).float()
+        image = image.permute(2, 1, 0).contiguous()
+        image = image.view(-1, 1, orig_shape[0])
+        image = interp(image, scale_factor=self.scale_factor, mode=self.mode)
+        result_shape = (orig_shape[2], orig_shape[1], -1)
+        image = image.view(*result_shape)
+        image = image.permute(2, 1, 0).contiguous()
+        return image
 
     def _parse_patch_size(self, patch_size):
         """Converts :class:`int` patch size to :class:`tuple`."""
@@ -99,7 +116,7 @@ class Patches(_AbstractPatches):
 
     def _init_patch_numbers(self):
         """Calculates the possible numbers of patches along x, y, and z."""
-        return [s - ps + 1 for s, ps in zip(self.im.shape, self.patch_size)]
+        return [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
 
     def __len__(self):
         """Returns the number of patches"""
@@ -117,7 +134,7 @@ class Patches(_AbstractPatches):
         """
         tind, x, y, z = self._unravel_index(ind)
         loc = tuple(slice(s, s + p) for s, p in zip((x, y, z), self.patch_size))
-        patch = self.transforms[tind](self.im[loc])
+        patch = self.transforms[tind](self.image[loc])
         patch = patch.squeeze() if self.squeeze else patch
         patch = patch[None, ...] if self.expand_channel_dim else patch
         return patch

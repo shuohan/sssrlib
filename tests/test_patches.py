@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import numpy as np
+import torch
+from torch.nn.functional import interpolate
 
 from sssrlib.patches import Patches
 from sssrlib.transform import Rot90, Flip, create_rot_flip
@@ -11,7 +13,7 @@ def test_patches():
     ps3d = (70, 81, 30)
     ps2d = (60, 45, 1)
     ps1d = (50, 1, 1)
-    image = np.random.rand(*image_shape)
+    image = np.random.rand(*image_shape).astype(np.float32)
     patches_3d = Patches(image, ps3d, squeeze=False, expand_channel_dim=False)
     patch = patches_3d[101]
     assert np.array_equal(patch, image[:ps3d[0], 1:1+ps3d[1], 9:9+ps3d[2]])
@@ -52,6 +54,16 @@ def test_patches():
     assert len(patches_3d) == 21 * 41 * 71
     assert np.array_equal(patch, image_trans[4:4+ps3d[0], 21:21+ps3d[1], 5:5+ps3d[2]])
 
+    # interp
+    scale_factor = 4.3
+    ref_image = interpolate(torch.tensor(image)[None, None, ...],
+                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
+    print(ref_image.shape)
+    patches_3d = Patches(image, ps3d, scale_factor=scale_factor,
+                         mode='linear', squeeze=False, expand_channel_dim=False)
+    print(patches_3d.image.shape)
+    assert torch.allclose(ref_image.squeeze(), patches_3d.image)
+
     # same size
     patches_2d = Patches(image, 64, squeeze=False, expand_channel_dim=False)
     patch = patches_2d[13140]
@@ -71,7 +83,7 @@ def test_patches():
     patches_2d = Patches(image, 64, x=2, y=0, z=1, transforms=transforms,
                          squeeze=False, expand_channel_dim=False)
     image_trans = np.transpose(image, [2, 0, 1])
-    assert np.array_equal(image_trans, patches_2d.im)
+    assert np.array_equal(image_trans, patches_2d.image)
     patch = patches_2d[1314000]
     patch = np.rot90(patch, k=1, axes=(0, 1))
     assert np.array_equal(patch, image_trans[46:110, 22:86, 0:1])
