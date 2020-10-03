@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import time
 from torch.nn.functional import interpolate
 
 from sssrlib.patches import Patches
@@ -56,13 +57,27 @@ def test_patches():
 
     # interp
     scale_factor = 4.3
+
+    start = time.time()
     ref_image = interpolate(torch.tensor(image)[None, None, ...],
                             scale_factor=(scale_factor, 1, 1), mode='trilinear')
-    print(ref_image.shape)
+    ref_image = ref_image.squeeze()
+    print('trilinear', time.time() - start)
+
+    start = time.time()
     patches_3d = Patches(image, ps3d, scale_factor=scale_factor,
                          mode='linear', squeeze=False, expand_channel_dim=False)
-    print(patches_3d.image.shape)
-    assert torch.allclose(ref_image.squeeze(), patches_3d.image)
+    print('linear', time.time() - start)
+
+    start = time.time()
+    ref_image = interpolate(torch.tensor(image)[None, None, ...],
+                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
+    ref_image = ref_image.squeeze()
+    print('trilinear', time.time() - start)
+
+    patch = patches_3d[131400]
+    assert torch.allclose(ref_image, patches_3d.image)
+    assert torch.allclose(patch, ref_image[142:142+ps3d[0], 8:8+ps3d[1], 24:24+ps3d[2]])
 
     # same size
     patches_2d = Patches(image, 64, squeeze=False, expand_channel_dim=False)
