@@ -78,7 +78,7 @@ class Patches(_AbstractPatches):
         self.x, self.y, self.z = (x, y, z)
         self.scale_factor = scale_factor
         self.mode = mode
-        self.image = self._proc_image(torch.tensor(image).float().contiguous())
+        self.image = self._proc_image(image)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.scale_factor = scale_factor
@@ -89,6 +89,7 @@ class Patches(_AbstractPatches):
 
     def _proc_image(self, image):
         """Permutes the input image and interpolates along the x-axis (0th)."""
+        image = torch.tensor(image).float().contiguous()
         image, self._xinv, self._yinv, self._zinv \
             = permute3d(image, self.x, self.y, self.z)
         if self.scale_factor != 1:
@@ -98,7 +99,6 @@ class Patches(_AbstractPatches):
     def _interp_image(self, image):
         """Interpolates the image along the x-axis."""
         orig_shape = image.shape
-        image = torch.tensor(image).float()
         image = image.permute(2, 1, 0)
         image = image.reshape(-1, 1, orig_shape[0])
         image = interp(image, scale_factor=self.scale_factor, mode=self.mode)
