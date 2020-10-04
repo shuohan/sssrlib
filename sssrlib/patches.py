@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
 from torch.nn.functional import interpolate as interp
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from .transform import Identity
 
@@ -156,6 +157,26 @@ class Patches(_AbstractPatches):
         shape = [len(self.transforms), self._xnum, self._ynum, self._znum]
         tind, xind, yind, zind = np.unravel_index(ind, shape)
         return tind, xind, yind, zind
+
+    def get_dataloader(self, batch_size):
+        """Returns the torch.utils.data.DataLoader of ``self``.
+
+        Args:
+            batch_size (int): The number of samples per mini-batch.
+
+        Returns:
+            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
+                instance itself.
+
+        """
+        weights = self._get_sample_weights()
+        sampler = WeightedRandomSampler(weights, batch_size)
+        loader = DataLoader(self, batch_size=batch_size, sampler=sampler)
+        return loader
+
+    def _get_sample_weights(self):
+        """Returns the sampling weights of each patch."""
+        return np.ones(len(self))
 
 
 class PatchesOr(_AbstractPatches):
