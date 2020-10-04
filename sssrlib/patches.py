@@ -6,6 +6,7 @@ TODO:
 """
 import numpy as np
 import torch
+from collections import namedtuple
 from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
@@ -13,6 +14,16 @@ from torch.nn.functional import interpolate as interp
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from .transform import Identity
+
+
+NamedData = namedtuple('NamedData', ['name', 'data'])
+"""Data with its name.
+
+Args:
+    name (str): The name of the data.
+    data (numpy.ndarray): The data.
+
+"""
 
 
 class _AbstractPatches:
@@ -65,6 +76,7 @@ class Patches(_AbstractPatches):
             the x-axis dimension after permutation.
         mode (str): The interpolation mode for
             :func:`torch.nn.functional.interpolate`.
+        named (bool): If ``True``, return the patch index as well.
         squeeze (bool): If ``True``, squeeze sampled patches.
         expand_channel_dim (bool): If ``True``, expand a channel dimension in
                 before the 0th dimension.
@@ -74,7 +86,7 @@ class Patches(_AbstractPatches):
 
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
-                 scale_factor=1, mode='linear',
+                 scale_factor=1, mode='linear', named=True,
                  squeeze=True, expand_channel_dim=True):
         self.x, self.y, self.z = (x, y, z)
         self.scale_factor = scale_factor
@@ -83,10 +95,12 @@ class Patches(_AbstractPatches):
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.scale_factor = scale_factor
+        self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
+        self._name_pattern = None
 
     def _proc_image(self, image):
         """Permutes the input image and interpolates along the x-axis (0th)."""
@@ -134,7 +148,7 @@ class Patches(_AbstractPatches):
             ind (int): The flattened index of the patch to return.
 
         Returns:
-            numpy.ndarray: The returned tensor.
+            torch.Tensor or NamedData: The returned tensor.
 
         """
         tind, x, y, z = self._unravel_index(ind)
@@ -142,7 +156,21 @@ class Patches(_AbstractPatches):
         patch = self.transforms[tind](self.image[loc])
         patch = patch.squeeze() if self.squeeze else patch
         patch = patch[None, ...] if self.expand_channel_dim else patch
+
+        if self.named:
+            name = self._get_name_pattern() % (x, y, z)
+            patch = NamedData(name, patch)
+
         return patch
+
+    def _get_name_pattern(self):
+        if self._name_pattern is None:
+            nx = len(str(self._xnum))
+            ny = len(str(self._ynum))
+            nz = len(str(self._znum))
+            self._name_pattern = 'ind-%%0%dd-%%0%dd-%%0%dd'
+            self._name_pattern = self._name_pattern % (nx, ny, nz)
+        return self._name_pattern
 
     def _unravel_index(self, ind):
         """Converts the flattened index into transform index and array coords.

@@ -9,7 +9,7 @@ from sssrlib.patches import Patches
 def test_dataloader():
     image = np.random.rand(256, 256, 32)
     patch_size = (64, 64, 1)
-    patches = Patches(image, patch_size)
+    patches = Patches(image, patch_size, named=False)
     batch_size = 32
     loader = patches.get_dataloader(batch_size)
     assert len(loader) == 1
