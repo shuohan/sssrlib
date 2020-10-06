@@ -215,7 +215,18 @@ class Patches(_AbstractPatches):
 
     def _get_sample_weights(self):
         """Returns the sampling weights of each patch."""
-        return np.ones(len(self))
+        grad = self._calc_image_grad()
+        shifts = [self._calc_shift(self.patch_size[0], self._xnum),
+                  self._calc_shift(self.patch_size[1], self._ynum),
+                  self._calc_shift(self.patch_size[2], self._znum)]
+        weights = grad[tuple(shifts)]
+        return weights.flatten()
+
+    def _calc_shift(self, patch_size, image_size):
+        left_shift = (patch_size - 1) // 2
+        right_shift = image_size + left_shift
+        shift = slice(left_shift, right_shift)
+        return shift
 
     def _calc_image_grad(self):
         """Calculates the image graident magnitude."""
