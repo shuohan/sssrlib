@@ -6,12 +6,14 @@ TODO:
 """
 import numpy as np
 import torch
+import torch.nn.functional as F
 from collections import namedtuple
 from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
 from torch.nn.functional import interpolate as interp
 from torch.utils.data import DataLoader, WeightedRandomSampler
+from scipy.ndimage import gaussian_filter
 
 from .transform import Identity
 
@@ -134,8 +136,14 @@ class Patches(_AbstractPatches):
         return [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
 
     def cuda(self):
-        """Puts patches into GPU."""
+        """Puts patches into GPU.
+
+        Returns:
+            Patches: The instance itself.
+
+        """
         self.image = self.image.cuda()
+        return self
 
     def __len__(self):
         """Returns the number of patches"""
@@ -189,6 +197,9 @@ class Patches(_AbstractPatches):
     def get_dataloader(self, batch_size):
         """Returns the torch.utils.data.DataLoader of ``self``.
 
+        Warning:
+            Only support 2D patches with size [x, y, 1] for now.
+
         Args:
             batch_size (int): The number of samples per mini-batch.
 
@@ -205,6 +216,52 @@ class Patches(_AbstractPatches):
     def _get_sample_weights(self):
         """Returns the sampling weights of each patch."""
         return np.ones(len(self))
+
+    def _calc_image_grad(self):
+        """Calculates the image graident magnitude."""
+        image = self._denoise(self.image[None, None, ...])
+        grad = self._calc_sobel_grad(image)
+        return grad.squeeze()
+
+    def _denoise(self, image):
+        gauss_kernel = self._get_gaussian_kernel()
+        padding = [s // 2 for s in gauss_kernel.shape[2:]]
+        image = F.conv3d(image, gauss_kernel, padding=padding)
+        return image
+
+    def _get_gaussian_kernel(self):
+        assert np.sum(np.array(self.patch_size) != 1) == 2
+        sigma = 3
+        length = 4 * sigma * 2 + 1
+        coord = np.arange(length) - length // 2
+        xcoord, ycoord = np.meshgrid(coord, coord, indexing='ij')
+        kernel = np.exp(-(xcoord ** 2 + ycoord ** 2) / (2 * sigma ** 2))
+        kernel = kernel / np.sum(kernel)
+        kernel = torch.tensor(kernel, device=self.image.device).float()
+        kernel = kernel[None, None, ..., None]
+        return kernel
+
+    def _calc_sobel_grad(self, image):
+        device = self.image.device
+        sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1,  0, -1]],
+                               device=device, dtype=torch.float)
+        sobel_x = sobel_x[None, None, ..., None]
+        sobel_y = torch.tensor([[1,  2, 1], [0,  0,  0], [-1, -2, -1]],
+                               device=device, dtype=torch.float)
+        sobel_y = sobel_y[None, None, ..., None]
+        grad_x = F.conv3d(image, sobel_x, padding=[1, 1, 0])
+        grad_y = F.conv3d(image, sobel_y, padding=[1, 1, 0])
+        grad = torch.sqrt(grad_x ** 2 + grad_y ** 2)
+        return grad
+
+    # def _calc_avg_grad(self):
+    #     avg_kernel = torch.ones(self.patch_size, dtype=torch.float,
+    #                             device=self.image.device)[None, None, ...]
+    #     avg_kernel = avg_kernel / torch.sum(avg_kernel)
+    #     padding = [ps // 2 for ps in self.patch_size]
+    #     avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
+    #     return avg_grad.squeeze()
+
 
 
 class PatchesOr(_AbstractPatches):
