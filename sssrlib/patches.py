@@ -100,8 +100,9 @@ class Patches(_AbstractPatches):
         self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
+        self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
-        self._len = len(self.transforms) * self._xnum * self._ynum * self._znum
+        self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
 
     def _proc_image(self, image):
@@ -166,18 +167,19 @@ class Patches(_AbstractPatches):
         patch = patch[None, ...] if self.expand_channel_dim else patch
 
         if self.named:
-            name = self._get_name_pattern() % (x, y, z)
+            name = self._get_name_pattern() % (tind, x, y, z)
             patch = NamedData(name, patch)
 
         return patch
 
     def _get_name_pattern(self):
         if self._name_pattern is None:
+            nt = len(str(self._tnum))
             nx = len(str(self._xnum))
             ny = len(str(self._ynum))
             nz = len(str(self._znum))
-            self._name_pattern = 'ind-%%0%dd-%%0%dd-%%0%dd'
-            self._name_pattern = self._name_pattern % (nx, ny, nz)
+            self._name_pattern = 'ind-%%0%dd-%%0%dd-%%0%dd-%%0%dd'
+            self._name_pattern = self._name_pattern % (nt, nx, ny, nz)
         return self._name_pattern
 
     def _unravel_index(self, ind):
@@ -220,7 +222,9 @@ class Patches(_AbstractPatches):
                   self._calc_shift(self.patch_size[1], self._ynum),
                   self._calc_shift(self.patch_size[2], self._znum)]
         weights = grad[tuple(shifts)]
-        return weights.flatten()
+        weights = weights.flatten()
+        weights = weights.repeat(len(self.transforms))
+        return weights
 
     def _calc_shift(self, patch_size, image_size):
         left_shift = (patch_size - 1) // 2
