@@ -334,11 +334,19 @@ class PatchesOr(_AbstractPatches):
         self.patches = list(patches)
         assert len(np.unique([p.named for p in self.patches])) == 1
         self.named = self.patches[0].named
+        assert len(np.unique([p.scale_factor for p in self.patches])) == 1
+        self.scale_factor = self.patches[0].scale_factor
         self._nums = [len(p) for p in self.patches]
         self._cumsum = np.cumsum(self._nums)
 
     def __len__(self):
         return self._cumsum[-1]
+
+    def __str__(self):
+        message = ['Patches #%d\n%s' % (i,  p.__str__())
+                   for i, p in enumerate(self.patches)]
+        message = '\n----------\n'.join(message)
+        return message
 
     def __getitem__(self, ind):
         pind = np.digitize(ind, self._cumsum)
