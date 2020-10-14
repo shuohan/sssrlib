@@ -78,6 +78,10 @@ class Patches(_AbstractPatches):
 
     where ``coords`` corresponds to the x, y, z starts of the patch.
 
+    Note:
+        The image is cropped so the number of patches does not exceed 2^24. See
+        https://github.com/pytorch/pytorch/issues/2576.
+
     Args:
         patch_size (int or tuple[int]): The size of the output patch. If
             its type is :class:`tuple`, the length should be 3. If it is an
@@ -157,7 +161,24 @@ class Patches(_AbstractPatches):
 
     def _init_patch_numbers(self):
         """Calculates the possible numbers of patches along x, y, and z."""
-        return [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
+        nums = [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
+        print(np.prod(nums), 2 ** 24, self._tnum)
+
+        orig_nums = nums.copy()
+
+        exceed = True
+        while exceed:
+            for i in range(len(nums)):
+                if np.prod(nums) < 2 ** 24 // self._tnum:
+                    exceed = False
+                    break
+                nums[i] = nums[i] - 1
+
+        if orig_nums != nums:
+            print('Too many patches. Possible patch indices are reduced from',
+                  orig_nums, 'to', nums)
+
+        return nums
 
     def cuda(self):
         """Puts patches into GPU.
@@ -215,7 +236,7 @@ class Patches(_AbstractPatches):
             tuple[int]: The tranform index and array coordinates.
 
         """
-        shape = [len(self.transforms), self._xnum, self._ynum, self._znum]
+        shape = [self._tnum, self._xnum, self._ynum, self._znum]
         tind, xind, yind, zind = np.unravel_index(ind, shape)
         return tind, xind, yind, zind
 
@@ -307,7 +328,7 @@ class PatchesOr(_AbstractPatches):
     def __getitem__(self, ind):
         pind = np.digitize(ind, self._cumsum)
         ind = ind - self._cumsum[pind - 1] if pind > 0 else ind
-        patch = self.patches[pind][ind] 
+        patch = self.patches[pind][ind]
 
         if self.named:
             names = patch.name.split('-')
