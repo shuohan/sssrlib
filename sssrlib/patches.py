@@ -40,7 +40,7 @@ class _AbstractPatches:
         """Returns the number of possible patches."""
         raise NotImplementedError
 
-    def get_dataloader(self, batch_size):
+    def get_dataloader(self, batch_size, num_workers=0):
         """Returns the torch.utils.data.DataLoader of ``self``.
 
         Warning:
@@ -56,8 +56,8 @@ class _AbstractPatches:
         """
         weights = self.get_sample_weights()
         sampler = WeightedRandomSampler(weights, batch_size)
-        loader = DataLoader(self, batch_size=batch_size, sampler=sampler)
-        return loader
+        return DataLoader(self, batch_size=batch_size, sampler=sampler,
+                          num_workers=num_workers)
 
     def get_sample_weights(self):
         """Returns the sampling weights of each patch."""
@@ -79,7 +79,8 @@ class Patches(_AbstractPatches):
     where ``coords`` corresponds to the x, y, z starts of the patch.
 
     Note:
-        The image is cropped so the number of patches does not exceed 2^24. See
+        If the number of patches exceeds 2^24, the image is cropped
+        symmetrically from its boundary. See
         https://github.com/pytorch/pytorch/issues/2576.
 
     Args:
@@ -159,24 +160,27 @@ class Patches(_AbstractPatches):
         assert len(patch_size) == 3
         return patch_size
 
-    def _init_patch_numbers(self):
-        """Calculates the possible numbers of patches along x, y, and z."""
-        nums = [s - ps + 1 for s, ps in zip(self.image.shape, self.patch_size)]
-        print(np.prod(nums), 2 ** 24, self._tnum)
+    def _init_patch_numbers(self, shape=None):
+        """Calculates the possible numbers of patches along x, y, and z.
 
-        orig_nums = nums.copy()
+        """
+        shape = self.image.shape if shape is None else shape
 
-        exceed = True
-        while exceed:
-            for i in range(len(nums)):
-                if np.prod(nums) < 2 ** 24 // self._tnum:
-                    exceed = False
-                    break
-                nums[i] = nums[i] - 1
+        while True:
+            nums = [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
+            if np.prod(nums) <= 2 ** 24 // self._tnum:
+                break
+            shape = [s - 1 for s in shape]
 
-        if orig_nums != nums:
-            print('Too many patches. Possible patch indices are reduced from',
-                  orig_nums, 'to', nums)
+        if shape != self.image.shape:
+            print('Too many patches. Crop the image from', self.image.shape,
+                  'to', tuple(shape))
+            lefts = [(s1 - s2)//2 for s1, s2 in zip(self.image.shape, shape)]
+            rights = [l + s for l, s in zip(lefts, shape)]
+            slices = tuple(slice(l, r) for l, r in zip(lefts, rights))
+            self.image = self.image[slices]
+            assert nums == [s - ps + 1 for s, ps in
+                            zip(self.image.shape, self.patch_size)]
 
         return nums
 
@@ -193,6 +197,18 @@ class Patches(_AbstractPatches):
     def __len__(self):
         """Returns the number of patches"""
         return self._len
+
+    def __str__(self):
+        message = ['Scale factor: %g' % self.scale_factor,
+                   'X axis: %d' % self.x,
+                   'Y axis: %d' % self.y,
+                   'Z axis: %d' % self.z,
+                   'Number of transforms: %d' % self._tnum,
+                   'Number of patches along X: %d' % self._xnum,
+                   'Number of patches along Y: %d' % self._ynum,
+                   'Number of patches along Z: %d' % self._znum,
+                   'Number of total patches: %d' % len(self)]
+        return '\n'.join(message)
 
     def __getitem__(self, ind):
         """Returns a patch at index.
@@ -301,7 +317,6 @@ class Patches(_AbstractPatches):
     #     padding = [ps // 2 for ps in self.patch_size]
     #     avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
     #     return avg_grad.squeeze()
-
 
 
 class PatchesOr(_AbstractPatches):
