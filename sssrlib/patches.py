@@ -40,6 +40,29 @@ class _AbstractPatches:
         """Returns the number of possible patches."""
         raise NotImplementedError
 
+    def get_dataloader(self, batch_size):
+        """Returns the torch.utils.data.DataLoader of ``self``.
+
+        Warning:
+            Only support 2D patches with size [x, y, 1] for now.
+
+        Args:
+            batch_size (int): The number of samples per mini-batch.
+
+        Returns:
+            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
+                instance itself.
+
+        """
+        weights = self.get_sample_weights()
+        sampler = WeightedRandomSampler(weights, batch_size)
+        loader = DataLoader(self, batch_size=batch_size, sampler=sampler)
+        return loader
+
+    def get_sample_weights(self):
+        """Returns the sampling weights of each patch."""
+        raise NotImplementedError
+
 
 class Patches(_AbstractPatches):
     """Outputs patches from a 3D image.
@@ -178,7 +201,7 @@ class Patches(_AbstractPatches):
             nx = len(str(self._xnum))
             ny = len(str(self._ynum))
             nz = len(str(self._znum))
-            self._name_pattern = 'ind-%%0%dd-%%0%dd-%%0%dd-%%0%dd'
+            self._name_pattern = 'ind-t%%0%dd-x%%0%dd-y%%0%dd-z%%0%dd'
             self._name_pattern = self._name_pattern % (nt, nx, ny, nz)
         return self._name_pattern
 
@@ -196,26 +219,7 @@ class Patches(_AbstractPatches):
         tind, xind, yind, zind = np.unravel_index(ind, shape)
         return tind, xind, yind, zind
 
-    def get_dataloader(self, batch_size):
-        """Returns the torch.utils.data.DataLoader of ``self``.
-
-        Warning:
-            Only support 2D patches with size [x, y, 1] for now.
-
-        Args:
-            batch_size (int): The number of samples per mini-batch.
-
-        Returns:
-            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
-                instance itself.
-
-        """
-        weights = self._get_sample_weights()
-        sampler = WeightedRandomSampler(weights, batch_size)
-        loader = DataLoader(self, batch_size=batch_size, sampler=sampler)
-        return loader
-
-    def _get_sample_weights(self):
+    def get_sample_weights(self):
         """Returns the sampling weights of each patch."""
         grad = self._calc_image_grad()
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
@@ -292,6 +296,8 @@ class PatchesOr(_AbstractPatches):
     """
     def __init__(self, *patches):
         self.patches = list(patches)
+        assert len(np.unique([p.named for p in self.patches])) == 1
+        self.named = self.patches[0].named
         self._nums = [len(p) for p in self.patches]
         self._cumsum = np.cumsum(self._nums)
 
@@ -299,9 +305,22 @@ class PatchesOr(_AbstractPatches):
         return self._cumsum[-1]
 
     def __getitem__(self, ind):
-        pind = np.digitize(ind, self._nums)
+        pind = np.digitize(ind, self._cumsum)
         ind = ind - self._cumsum[pind - 1] if pind > 0 else ind
-        return self.patches[pind][ind]
+        patch = self.patches[pind][ind] 
+
+        if self.named:
+            names = patch.name.split('-')
+            pattern = 'p%%0%dd' % len(str(len(self.patches)))
+            names.insert(1, pattern % pind)
+            patch = NamedData('-'.join(names), patch.data)
+
+        return patch
+
+    def get_sample_weights(self):
+        weights = [p.get_sample_weights() for p in self.patches]
+        weights = torch.cat(weights)
+        return weights
 
     def register(self, patches):
         raise NotImplementedError
