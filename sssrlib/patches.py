@@ -286,28 +286,28 @@ class Patches(_AbstractPatches):
         return image
 
     def _get_gaussian_kernel(self):
-        assert np.sum(np.array(self.patch_size) != 1) == 2
-        sigma = 3
+        sigma = 2
         length = 4 * sigma * 2 + 1
         coord = np.arange(length) - length // 2
-        xcoord, ycoord = np.meshgrid(coord, coord, indexing='ij')
-        kernel = np.exp(-(xcoord ** 2 + ycoord ** 2) / (2 * sigma ** 2))
+        x, y, z = np.meshgrid(coord, coord, coord, indexing='ij')
+        kernel = np.exp(-(x ** 2 + y ** 2 + z ** 2) / (2 * sigma ** 2))
         kernel = kernel / np.sum(kernel)
         kernel = torch.tensor(kernel, device=self.image.device).float()
-        kernel = kernel[None, None, ..., None]
+        kernel = kernel[None, None, ...]
         return kernel
 
     def _calc_sobel_grad(self, image):
         device = self.image.device
-        sobel_x = torch.tensor([[1, 0, -1], [2, 0, -2], [1,  0, -1]],
-                               device=device, dtype=torch.float)
-        sobel_x = sobel_x[None, None, ..., None]
-        sobel_y = torch.tensor([[1,  2, 1], [0,  0,  0], [-1, -2, -1]],
-                               device=device, dtype=torch.float)
-        sobel_y = sobel_y[None, None, ..., None]
-        grad_x = F.conv3d(image, sobel_x, padding=[1, 1, 0])
-        grad_y = F.conv3d(image, sobel_y, padding=[1, 1, 0])
-        grad = torch.sqrt(grad_x ** 2 + grad_y ** 2)
+        sz = torch.stack((torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]]),
+                          torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]]),
+                          torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]])))
+        sz = sz.float().to(image.device)
+        sx = sz.permute([2, 0, 1])
+        sy = sz.permute([1, 2, 0])
+        grad_x = F.conv3d(image, sx[None, None, ...], padding=1)
+        grad_y = F.conv3d(image, sy[None, None, ...], padding=1)
+        grad_z = F.conv3d(image, sz[None, None, ...], padding=1)
+        grad = torch.sqrt(grad_x ** 2 + grad_y ** 2 + grad_z ** 2)
         return grad
 
     # def _calc_avg_grad(self):
