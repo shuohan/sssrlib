@@ -14,6 +14,7 @@ from image_processing_3d import permute3d
 from torch.nn.functional import interpolate
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from scipy.ndimage import gaussian_filter
+from scipy.ndimage.filters import convolve
 
 from .transform import Identity
 
@@ -173,7 +174,7 @@ class Patches(_AbstractPatches):
         return nums
 
     def cuda(self):
-        """Puts patches into GPU.
+        """Puts patches into CUDA.
 
         Returns:
             Patches: The instance itself.
@@ -273,14 +274,25 @@ class Patches(_AbstractPatches):
 
     def _calc_image_grad(self):
         """Calculates the image graident magnitude."""
-        image = self._denoise(self.image[None, None, ...])
-        grad = self._calc_sobel_grad(image)
+        if self.image.device == torch.device('cpu'):
+            denoised_image = self._denoise_cpu(self.image)
+        else:
+            denoised_image = self._denoise_cuda(self.image[None, None, ...])
+        grad = self._calc_sobel_grad(denoised_image)
         return grad.squeeze()
 
-    def _denoise(self, image):
+    def _denoise_cpu(self, image):
+        gauss_kernel = self._get_gaussian_kernel()
+        image = image.numpy().squeeze()
+        gauss_kernel = gauss_kernel.numpy().squeeze()
+        image = convolve(image, gauss_kernel, mode='constant')
+        image = torch.tensor(image, dtype=torch.float32)[None, None, ...]
+        return image
+
+    def _denoise_cuda(self, image):
         gauss_kernel = self._get_gaussian_kernel()
         padding = [s // 2 for s in gauss_kernel.shape[2:]]
-        image = F.conv3d(image, gauss_kernel, padding=padding)
+        image = F.conv3d(image, gauss_kernel.cuda(), padding=padding)
         return image
 
     def _get_gaussian_kernel(self):

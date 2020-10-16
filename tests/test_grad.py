@@ -30,7 +30,7 @@ def test_grad():
     plt.imshow(grad[:, :, grad.shape[2]//2], cmap='gray')
     plt.subplot(1, 2, 2)
     plt.imshow(image[:, :, grad.shape[2]//2], cmap='gray')
-    plt.gcf().savefig(dirname.joinpath('grad.png'))
+    plt.gcf().savefig(dirname.joinpath('grad_cuda.png'))
 
     weights = patches.get_sample_weights()
     assert len(weights) == len(patches)
@@ -44,9 +44,18 @@ def test_grad():
                                     z + (patch_size[2] - 1)//2]
 
     patch_size = [64, 64, 1]
-    patches = Patches(image, patch_size, transforms=create_rot_flip()).cuda()
+    patches = Patches(image, patch_size, transforms=create_rot_flip()).cpu()
     weights = patches.get_sample_weights()
     assert len(weights) == len(patches)
+    grad = patches._calc_image_grad().cpu().numpy()
+
+    plt.figure()
+    plt.subplot(1, 2, 1)
+    plt.imshow(grad[:, :, grad.shape[2]//2], cmap='gray')
+    plt.subplot(1, 2, 2)
+    plt.imshow(image[:, :, grad.shape[2]//2], cmap='gray')
+    plt.gcf().savefig(dirname.joinpath('grad_cpu.png'))
+
     for i in range(100):
         ind = int(np.random.uniform(0, len(weights)))
         _, x, y, z = np.unravel_index(ind, [len(patches.transforms), 65, 65, 128])
