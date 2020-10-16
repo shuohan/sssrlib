@@ -11,7 +11,7 @@ from collections import namedtuple
 from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
-from torch.nn.functional import interpolate as interp
+from torch.nn.functional import interpolate
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from scipy.ndimage import gaussian_filter
 
@@ -102,10 +102,8 @@ class Patches(_AbstractPatches):
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
-        scale_factor (float): The scale factor of :attr:`image` along
-            the x-axis dimension after permutation.
-        mode (str): The interpolation mode for
-            :func:`torch.nn.functional.interpolate`.
+        scale_factor (iterable[float]): The scale factor of :attr:`image` along
+            the three axes.
         named (bool): If ``True``, return the patch index as well.
         squeeze (bool): If ``True``, squeeze sampled patches.
         expand_channel_dim (bool): If ``True``, expand a channel dimension in
@@ -116,15 +114,13 @@ class Patches(_AbstractPatches):
 
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
-                 scale_factor=1, mode='linear', named=True,
-                 squeeze=True, expand_channel_dim=True):
+                 scale_factor=(1, 1, 1), named=True, squeeze=True,
+                 expand_channel_dim=True):
         self.x, self.y, self.z = (x, y, z)
-        self.scale_factor = scale_factor
-        self.mode = mode
+        self.scale_factor = tuple(scale_factor)
         self.image = self._proc_image(image)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
-        self.scale_factor = scale_factor
         self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
@@ -134,23 +130,15 @@ class Patches(_AbstractPatches):
         self._name_pattern = None
 
     def _proc_image(self, image):
-        """Permutes the input image and interpolates along the x-axis (0th)."""
+        """Permutes the input image and interpolates the image."""
         image = torch.tensor(image).float().contiguous()
         image, self._xinv, self._yinv, self._zinv \
             = permute3d(image, self.x, self.y, self.z)
-        if self.scale_factor != 1:
-            image = self._interp_image(image)
-        return image
-
-    def _interp_image(self, image):
-        """Interpolates the image along the x-axis."""
-        orig_shape = image.shape
-        image = image.permute(2, 1, 0)
-        image = image.reshape(-1, 1, orig_shape[0])
-        image = interp(image, scale_factor=self.scale_factor, mode=self.mode)
-        result_shape = (orig_shape[2], orig_shape[1], -1)
-        image = image.reshape(*result_shape)
-        image = image.permute(2, 1, 0)
+        if any([s !=1 for s in self.scale_factor]):
+            image = image[None, None, ...]
+            image = interpolate(image, scale_factor=self.scale_factor,
+                                mode='trilinear')
+            image = image.squeeze()
         return image
 
     def _parse_patch_size(self, patch_size):
@@ -194,12 +182,22 @@ class Patches(_AbstractPatches):
         self.image = self.image.cuda()
         return self
 
+    def cpu(self):
+        """Puts patches into CPU.
+
+        Returns:
+            Patches: The instance itself.
+
+        """
+        self.image = self.image.cpu()
+        return self
+
     def __len__(self):
         """Returns the number of patches"""
         return self._len
 
     def __str__(self):
-        message = ['Scale factor: %g' % self.scale_factor,
+        message = ['Scale factor: %s' % str(self.scale_factor),
                    'X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
@@ -334,7 +332,7 @@ class PatchesOr(_AbstractPatches):
         self.patches = list(patches)
         assert len(np.unique([p.named for p in self.patches])) == 1
         self.named = self.patches[0].named
-        assert len(np.unique([p.scale_factor for p in self.patches])) == 1
+        assert len(set(tuple(tuple(p.scale_factor) for p in self.patches))) == 1
         self.scale_factor = self.patches[0].scale_factor
         self._nums = [len(p) for p in self.patches]
         self._cumsum = np.cumsum(self._nums)
