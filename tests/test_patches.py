@@ -51,7 +51,7 @@ def test_patches():
     patches_2d = Patches(image, ps2d, squeeze=True, expand_channel_dim=True, named=True)
     patch = patches_2d[13140]
     assert isinstance(patch, NamedData)
-    assert patch.name == 'ind-02-16-072'
+    assert patch.name == 'ind-t0-x02-y16-z072'
     assert np.array_equal(patch.data, image[2:2+ps2d[0], 16:16+ps2d[1], 72][None, ...])
     assert len(patches_2d) == 41 * 46 * 121
 
@@ -66,22 +66,12 @@ def test_patches():
     # interp
     scale_factor = 4.3
 
-    start = time.time()
+    patches_3d = Patches(image, ps3d, scale_factor=(scale_factor, 1, 1),
+                         named=False, squeeze=False, expand_channel_dim=False)
+
     ref_image = interpolate(torch.tensor(image)[None, None, ...],
                             scale_factor=(scale_factor, 1, 1), mode='trilinear')
     ref_image = ref_image.squeeze()
-    print('trilinear', time.time() - start)
-
-    start = time.time()
-    patches_3d = Patches(image, ps3d, scale_factor=scale_factor, named=False,
-                         mode='linear', squeeze=False, expand_channel_dim=False)
-    print('linear', time.time() - start)
-
-    start = time.time()
-    ref_image = interpolate(torch.tensor(image)[None, None, ...],
-                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
-    ref_image = ref_image.squeeze()
-    print('trilinear', time.time() - start)
 
     patch = patches_3d[131400]
     assert torch.allclose(ref_image, patches_3d.image)
@@ -104,7 +94,7 @@ def test_patches():
 
     # together
     patches_2d = Patches(image, 64, x=2, y=0, z=1, transforms=transforms,
-                         scale_factor=scale_factor, mode='linear', named=True,
+                         scale_factor=(scale_factor, 1, 1), named=True,
                          squeeze=True, expand_channel_dim=True)
     patches_2d.cuda()
     image_trans = np.transpose(image, [2, 0, 1])
@@ -114,7 +104,7 @@ def test_patches():
     patch = patches_2d[3637383]
     ref_patch = ref_image[178:178+64, 11:11+64, 33]
     ref_patch = torch.rot90(ref_patch, 1)[None, ...]
-    assert patch.name == 'ind-178-11-33'
+    assert patch.name == 'ind-t2-x178-y11-z33'
     assert len(patches_2d) == 8 * 457 * 37 * 90
     assert torch.allclose(patch.data, ref_patch)
 
