@@ -9,28 +9,33 @@ from sssrlib.patches import Patches
 from sssrlib.transform import create_rot_flip
 
 
-def test_grad():
+def test_grad(sigma=0):
     dirname = Path('results_grad')
     dirname.mkdir(exist_ok=True)
 
     image = np.load('shepp3d.npy')
     patch_size = [64, 64, 64]
-    patches = Patches(image, patch_size, transforms=create_rot_flip()).cuda()
-    kernel = patches._get_gaussian_kernel().cpu().numpy().squeeze()
-    sum = np.sum(kernel)
-    assert np.isclose(sum, 1)
-    grad = patches._calc_image_grad().cpu().numpy()
+    patches = Patches(image, patch_size, transforms=create_rot_flip(),
+                      sigma=sigma).cuda()
 
-    plt.figure()
-    plt.imshow(kernel[:, :, kernel.shape[2]//2])
-    plt.gcf().savefig(dirname.joinpath('kernel.png'))
+    if sigma > 0:
+        kernel = patches._get_gaussian_kernel().cpu().numpy().squeeze()
+        sum = np.sum(kernel)
+        assert np.isclose(sum, 1)
+
+        plt.figure()
+        plt.imshow(kernel[:, :, kernel.shape[2]//2])
+        plt.gcf().savefig(dirname.joinpath('kernel.png'))
+
+    grad = patches._calc_image_grad().cpu().numpy()
 
     plt.figure()
     plt.subplot(1, 2, 1)
     plt.imshow(grad[:, :, grad.shape[2]//2], cmap='gray')
     plt.subplot(1, 2, 2)
     plt.imshow(image[:, :, grad.shape[2]//2], cmap='gray')
-    plt.gcf().savefig(dirname.joinpath('grad_cuda.png'))
+    filename = 'grad_simga-{}_cuda.png'.format(sigma)
+    plt.gcf().savefig(dirname.joinpath(filename))
 
     weights = patches.get_sample_weights()
     assert len(weights) == len(patches)
@@ -44,7 +49,8 @@ def test_grad():
                                     z + (patch_size[2] - 1)//2]
 
     patch_size = [64, 64, 1]
-    patches = Patches(image, patch_size, transforms=create_rot_flip()).cpu()
+    patches = Patches(image, patch_size, transforms=create_rot_flip(),
+                      sigma=sigma).cpu()
     weights = patches.get_sample_weights()
     assert len(weights) == len(patches)
     grad = patches._calc_image_grad().cpu().numpy()
@@ -54,7 +60,8 @@ def test_grad():
     plt.imshow(grad[:, :, grad.shape[2]//2], cmap='gray')
     plt.subplot(1, 2, 2)
     plt.imshow(image[:, :, grad.shape[2]//2], cmap='gray')
-    plt.gcf().savefig(dirname.joinpath('grad_cpu.png'))
+    filename = 'grad_simga-{}_cpu.png'.format(sigma)
+    plt.gcf().savefig(dirname.joinpath(filename))
 
     for i in range(100):
         ind = int(np.random.uniform(0, len(weights)))

@@ -105,6 +105,8 @@ class Patches(_AbstractPatches):
             will be used.
         scale_factor (iterable[float]): The scale factor of :attr:`image` along
             the three axes.
+        sigma (float): The sigma of Gaussian filter to denoise before
+            calculating the probability map. Do not denoise if 0.
         named (bool): If ``True``, return the patch index as well.
         squeeze (bool): If ``True``, squeeze sampled patches.
         expand_channel_dim (bool): If ``True``, expand a channel dimension in
@@ -115,10 +117,11 @@ class Patches(_AbstractPatches):
 
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
-                 scale_factor=(1, 1, 1), named=True, squeeze=True,
+                 scale_factor=(1, 1, 1), sigma=0, named=True, squeeze=True,
                  expand_channel_dim=True):
         self.x, self.y, self.z = (x, y, z)
         self.scale_factor = tuple(scale_factor)
+        self.sigma = sigma
         self.image = self._proc_image(image)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
@@ -274,10 +277,14 @@ class Patches(_AbstractPatches):
 
     def _calc_image_grad(self):
         """Calculates the image graident magnitude."""
-        if self.image.device == torch.device('cpu'):
-            denoised_image = self._denoise_cpu(self.image)
+        if self.sigma > 0:
+            if self.image.device == torch.device('cpu'):
+                denoised_image = self._denoise_cpu(self.image)
+            else:
+                denoised_image = self._denoise_cuda(self.image[None, None, ...])
         else:
-            denoised_image = self._denoise_cuda(self.image[None, None, ...])
+            denoised_image = torch.tensor(self.image, dtype=torch.float32)[None, None, ...]
+
         grad = self._calc_sobel_grad(denoised_image)
         return grad.squeeze()
 
@@ -296,11 +303,10 @@ class Patches(_AbstractPatches):
         return image
 
     def _get_gaussian_kernel(self):
-        sigma = 2
-        length = 4 * sigma * 2 + 1
+        length = 4 * self.sigma * 2 + 1
         coord = np.arange(length) - length // 2
         x, y, z = np.meshgrid(coord, coord, coord, indexing='ij')
-        kernel = np.exp(-(x ** 2 + y ** 2 + z ** 2) / (2 * sigma ** 2))
+        kernel = np.exp(-(x ** 2 + y ** 2 + z ** 2) / (2 * self.sigma ** 2))
         kernel = kernel / np.sum(kernel)
         kernel = torch.tensor(kernel, device=self.image.device).float()
         kernel = kernel[None, None, ...]
