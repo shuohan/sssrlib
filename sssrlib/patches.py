@@ -278,28 +278,18 @@ class Patches(_AbstractPatches):
     def _calc_image_grad(self):
         """Calculates the image graident magnitude."""
         if self.sigma > 0:
-            if self.image.device == torch.device('cpu'):
-                denoised_image = self._denoise_cpu(self.image)
-            else:
-                denoised_image = self._denoise_cuda(self.image[None, None, ...])
+            denoised_image = self._denoise(self.image[None, None, ...])
         else:
-            denoised_image = torch.tensor(self.image, dtype=torch.float32)[None, None, ...]
-
+            denoised_image = self.image[None, None, ...]
         grad = self._calc_sobel_grad(denoised_image)
-        return grad.squeeze()
+        grad = grad.squeeze()
+        return grad
 
-    def _denoise_cpu(self, image):
+    def _denoise(self, image):
         gauss_kernel = self._get_gaussian_kernel()
-        image = image.numpy().squeeze()
-        gauss_kernel = gauss_kernel.numpy().squeeze()
-        image = convolve(image, gauss_kernel, mode='constant')
-        image = torch.tensor(image, dtype=torch.float32)[None, None, ...]
-        return image
-
-    def _denoise_cuda(self, image):
-        gauss_kernel = self._get_gaussian_kernel()
+        gauss_kernel = gauss_kernel.to(image.device)
         padding = [s // 2 for s in gauss_kernel.shape[2:]]
-        image = F.conv3d(image, gauss_kernel.cuda(), padding=padding)
+        image = F.conv3d(image, gauss_kernel, padding=padding)
         return image
 
     def _get_gaussian_kernel(self):
@@ -313,7 +303,6 @@ class Patches(_AbstractPatches):
         return kernel
 
     def _calc_sobel_grad(self, image):
-        device = self.image.device
         sz = torch.stack((torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]]),
                           torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]]),
                           torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]])))
