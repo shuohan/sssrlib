@@ -15,8 +15,11 @@ def test_grad(sigma=0):
 
     image = np.load('shepp3d.npy')
     patch_size = [64, 64, 64]
+    voxel_size = [1, 1, 2]
+
     patches = Patches(image, patch_size, transforms=create_rot_flip(),
-                      sigma=sigma).cuda()
+                      sigma=sigma, voxel_size=voxel_size).cuda()
+    print(patches.voxel_size)
 
     if sigma > 0:
         kernel = patches._get_gaussian_kernel().cpu().numpy().squeeze()

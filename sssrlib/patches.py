@@ -100,6 +100,9 @@ class Patches(_AbstractPatches):
             permute to the y-axis in the result image.
         z (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the z-axis in the result image.
+        voxel_size (tuple[float]): The size of the voxel. It is permuted along
+            with the image according to attributes :attr:`x`, :attr:`y`, and
+            :attr:`z`.
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
@@ -114,11 +117,13 @@ class Patches(_AbstractPatches):
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
-                 sigma=0, named=True, squeeze=True, expand_channel_dim=True):
+    def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
+                 transforms=[], sigma=0, named=True, squeeze=True,
+                 expand_channel_dim=True):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
         self.image = self._permute_image(image)
+        self.voxel_size = [voxel_size[i] for i in (self.x, self.y, self.z)]
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.named = named
