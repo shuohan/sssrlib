@@ -103,8 +103,6 @@ class Patches(_AbstractPatches):
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
-        scale_factor (iterable[float]): The scale factor of :attr:`image` along
-            the three axes.
         sigma (float): The sigma of Gaussian filter to denoise before
             calculating the probability map. Do not denoise if 0.
         named (bool): If ``True``, return the patch index as well.
@@ -117,32 +115,26 @@ class Patches(_AbstractPatches):
 
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, transforms=[],
-                 scale_factor=(1, 1, 1), sigma=0, named=True, squeeze=True,
-                 expand_channel_dim=True):
+                 sigma=0, named=True, squeeze=True, expand_channel_dim=True):
         self.x, self.y, self.z = (x, y, z)
-        self.scale_factor = tuple(scale_factor)
         self.sigma = sigma
-        self.image = self._proc_image(image)
+        self.image = self._permute_image(image)
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
         self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
+
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
 
-    def _proc_image(self, image):
-        """Permutes the input image and interpolates the image."""
+    def _permute_image(self, image):
+        """Permutes the input image."""
         image = torch.tensor(image).float().contiguous()
         image, self._xinv, self._yinv, self._zinv \
             = permute3d(image, self.x, self.y, self.z)
-        if any([s !=1 for s in self.scale_factor]):
-            image = image[None, None, ...]
-            image = interpolate(image, scale_factor=self.scale_factor,
-                                mode='trilinear')
-            image = image.squeeze()
         return image
 
     def _parse_patch_size(self, patch_size):
@@ -201,8 +193,7 @@ class Patches(_AbstractPatches):
         return self._len
 
     def __str__(self):
-        message = ['Scale factor: %s' % str(self.scale_factor),
-                   'X axis: %d' % self.x,
+        message = ['X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
                    'Number of transforms: %d' % self._tnum,
@@ -339,8 +330,6 @@ class PatchesOr(_AbstractPatches):
         self.patches = list(patches)
         assert len(np.unique([p.named for p in self.patches])) == 1
         self.named = self.patches[0].named
-        assert len(set(tuple(tuple(p.scale_factor) for p in self.patches))) == 1
-        self.scale_factor = self.patches[0].scale_factor
         self._nums = [len(p) for p in self.patches]
         self._cumsum = np.cumsum(self._nums)
 

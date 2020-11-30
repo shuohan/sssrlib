@@ -63,20 +63,6 @@ def test_patches():
     assert len(patches_3d) == 21 * 41 * 71
     assert np.array_equal(patch, image_trans[4:4+ps3d[0], 21:21+ps3d[1], 5:5+ps3d[2]])
 
-    # interp
-    scale_factor = 4.3
-
-    patches_3d = Patches(image, ps3d, scale_factor=(scale_factor, 1, 1),
-                         named=False, squeeze=False, expand_channel_dim=False)
-
-    ref_image = interpolate(torch.tensor(image)[None, None, ...],
-                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
-    ref_image = ref_image.squeeze()
-
-    patch = patches_3d[131400]
-    assert torch.allclose(ref_image, patches_3d.image)
-    assert torch.allclose(patch, ref_image[142:142+ps3d[0], 8:8+ps3d[1], 24:24+ps3d[2]])
-
     # same size
     patches_2d = Patches(image, 64, squeeze=False, expand_channel_dim=False, named=False)
     patch = patches_2d[13140]
@@ -94,18 +80,15 @@ def test_patches():
 
     # together
     patches_2d = Patches(image, 64, x=2, y=0, z=1, transforms=transforms,
-                         scale_factor=(scale_factor, 1, 1), named=True,
-                         squeeze=True, expand_channel_dim=True)
+                         named=True, squeeze=True, expand_channel_dim=True)
     patches_2d.cuda()
     image_trans = np.transpose(image, [2, 0, 1])
-    ref_image = interpolate(torch.tensor(image_trans).cuda()[None, None, ...],
-                            scale_factor=(scale_factor, 1, 1), mode='trilinear')
-    ref_image = ref_image.squeeze()
-    patch = patches_2d[3637383]
-    ref_patch = ref_image[178:178+64, 11:11+64, 33]
-    ref_patch = torch.rot90(ref_patch, 1)[None, ...]
-    assert patch.name == 'ind-t2-x178-y11-z33'
-    assert len(patches_2d) == 8 * 457 * 37 * 90
+    patch = patches_2d[1314000]
+    ref_patch = image_trans[46:46+64, 22:22+64, 0]
+    ref_patch = torch.tensor(ref_patch, dtype=torch.float32).cuda()
+    ref_patch = torch.rot90(ref_patch, 3)[None, ...]
+    assert patch.name == 'ind-t6-x46-y22-z00'
+    assert len(patches_2d) == 8 * 58 * 37 * 90
     assert torch.allclose(patch.data, ref_patch)
 
     # corner cases
