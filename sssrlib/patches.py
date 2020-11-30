@@ -256,12 +256,14 @@ class Patches(_AbstractPatches):
 
     def get_sample_weights(self):
         """Returns the sampling weights of each patch."""
-        grad = self._calc_image_grad()
+        grads = self._calc_image_grads()
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
                   self._calc_shift(self.patch_size[1], self._ynum),
                   self._calc_shift(self.patch_size[2], self._znum)]
-        weights = grad[tuple(shifts)]
-        weights = weights.flatten()
+        weights = [grad[tuple(shifts)].flatten() for grad in grads]
+        weights = [w for w, ps in zip(weights, self.patch_size) if ps > 1]
+        weights = [w / torch.sum(w) for w in weights]
+        weights = torch.prod(torch.stack(weights), axis=0)
         weights = weights.repeat(len(self.transforms))
         return weights
 
@@ -271,15 +273,15 @@ class Patches(_AbstractPatches):
         shift = slice(left_shift, right_shift)
         return shift
 
-    def _calc_image_grad(self):
+    def _calc_image_grads(self):
         """Calculates the image graident magnitude."""
         if self.sigma > 0:
             denoised_image = self._denoise(self.image[None, None, ...])
         else:
             denoised_image = self.image[None, None, ...]
-        grad = self._calc_sobel_grad(denoised_image)
-        grad = grad.squeeze()
-        return grad
+        grads = self._calc_sobel_grads(denoised_image)
+        grads = tuple(grad.squeeze() for grad in grads)
+        return grads
 
     def _denoise(self, image):
         gauss_kernel = self._get_gaussian_kernel()
@@ -298,7 +300,7 @@ class Patches(_AbstractPatches):
         kernel = kernel[None, None, ...]
         return kernel
 
-    def _calc_sobel_grad(self, image):
+    def _calc_sobel_grads(self, image):
         sz = torch.stack((torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]]),
                           torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]]),
                           torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]])))
@@ -308,8 +310,7 @@ class Patches(_AbstractPatches):
         grad_x = F.conv3d(image, sx[None, None, ...], padding=1)
         grad_y = F.conv3d(image, sy[None, None, ...], padding=1)
         grad_z = F.conv3d(image, sz[None, None, ...], padding=1)
-        grad = torch.sqrt(grad_x ** 2 + grad_y ** 2 + grad_z ** 2)
-        return grad
+        return grad_x, grad_y, grad_z
 
     # def _calc_avg_grad(self):
     #     avg_kernel = torch.ones(self.patch_size, dtype=torch.float,
