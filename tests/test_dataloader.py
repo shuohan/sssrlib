@@ -25,8 +25,10 @@ def test_dataloader():
     #     filename = dirname.joinpath('patch-%d.png' % i)
     #     plt.imsave(filename, patch, cmap='gray')
 
+    weight_stride = (17, 17, 5)
     patches = Patches(image, patch_size, sigma=2,
-                      named=False, avg_grad=True).cuda()
+                      named=False, avg_grad=True,
+                      weight_stride=weight_stride).cuda()
     weights = patches.get_sample_weights()
     # indices = torch.argsort(weights, descending=True)[:500000:10000]
     indices = torch.argsort(weights, descending=True)[:50]

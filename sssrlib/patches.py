@@ -114,6 +114,7 @@ class Patches(_AbstractPatches):
                 before the 0th dimension.
         avg_grad (bool): Average the image gradients when calculating sampling
             weights.
+        weight_stride(tuple[int]): The strides between sampling weights.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
@@ -121,7 +122,8 @@ class Patches(_AbstractPatches):
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
                  transforms=[], sigma=0, named=True, squeeze=True,
-                 expand_channel_dim=True, avg_grad=False):
+                 expand_channel_dim=True, avg_grad=False,
+                 weight_stride=(1, 1, 1)):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
         self.image = self._permute_image(image)
@@ -132,6 +134,7 @@ class Patches(_AbstractPatches):
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
         self.avg_grad = avg_grad
+        self.weight_stride = weight_stride
 
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
@@ -255,7 +258,6 @@ class Patches(_AbstractPatches):
         """
         shape = [self._tnum, self._xnum, self._ynum, self._znum]
         tind, xind, yind, zind = np.unravel_index(ind, shape)
-        print(ind, xind, yind, zind)
         return tind, xind, yind, zind
 
     def get_sample_weights(self):
@@ -264,11 +266,25 @@ class Patches(_AbstractPatches):
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
                   self._calc_shift(self.patch_size[1], self._ynum),
                   self._calc_shift(self.patch_size[2], self._znum)]
-        weights = [grad[tuple(shifts)].flatten() for grad in grads]
+        weights = [grad[tuple(shifts)] for grad in grads]
         weights = [w for w, ps in zip(weights, self.patch_size) if ps > 1]
         weights = [w / torch.sum(w) for w in weights]
-        weights = torch.prod(torch.stack(weights), axis=0)
+        weights = torch.prod(torch.stack(weights), axis=0)[None, None, ...]
+
+        w_pool, indices = F.max_pool3d(weights,
+                                       kernel_size=self.patch_size,
+                                       stride=self.weight_stride,
+                                       return_indices=True)
+
+        weights = F.max_unpool3d(w_pool, indices, self.patch_size,
+                                 stride=self.weight_stride,
+                                 output_size=weights.shape)
+
+        weights = weights.flatten()
         weights = weights.repeat(len(self.transforms))
+
+        weights = weights / torch.sum(weights)
+
         return weights
 
     def _calc_shift(self, patch_size, image_size):
