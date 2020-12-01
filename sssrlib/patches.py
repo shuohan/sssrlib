@@ -271,13 +271,12 @@ class Patches(_AbstractPatches):
         weights = [w / torch.sum(w) for w in weights]
         weights = torch.prod(torch.stack(weights), axis=0)[None, None, ...]
 
-        w_pool, indices = F.max_pool3d(weights,
-                                       kernel_size=self.patch_size,
-                                       stride=self.weight_stride,
-                                       return_indices=True)
+        kernel_size = [2 * s for s in self.weight_stride]
+        stride = self.weight_stride
+        w_pool, indices = F.max_pool3d(weights, kernel_size=kernel_size,
+                                       stride=stride, return_indices=True)
 
-        weights = F.max_unpool3d(w_pool, indices, self.patch_size,
-                                 stride=self.weight_stride,
+        weights = F.max_unpool3d(w_pool, indices, kernel_size, stride=stride,
                                  output_size=weights.shape)
 
         weights = weights.flatten()
