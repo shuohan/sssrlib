@@ -112,6 +112,8 @@ class Patches(_AbstractPatches):
         squeeze (bool): If ``True``, squeeze sampled patches.
         expand_channel_dim (bool): If ``True``, expand a channel dimension in
                 before the 0th dimension.
+        avg_grad (bool): Average the image gradients when calculating sampling
+            weights.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
@@ -119,7 +121,7 @@ class Patches(_AbstractPatches):
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
                  transforms=[], sigma=0, named=True, squeeze=True,
-                 expand_channel_dim=True):
+                 expand_channel_dim=True, avg_grad=False):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
         self.image = self._permute_image(image)
@@ -129,6 +131,7 @@ class Patches(_AbstractPatches):
         self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
+        self.avg_grad = avg_grad
 
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
@@ -252,6 +255,7 @@ class Patches(_AbstractPatches):
         """
         shape = [self._tnum, self._xnum, self._ynum, self._znum]
         tind, xind, yind, zind = np.unravel_index(ind, shape)
+        print(ind, xind, yind, zind)
         return tind, xind, yind, zind
 
     def get_sample_weights(self):
@@ -307,18 +311,21 @@ class Patches(_AbstractPatches):
         sz = sz.float().to(image.device)
         sx = sz.permute([2, 0, 1])
         sy = sz.permute([1, 2, 0])
-        grad_x = F.conv3d(image, sx[None, None, ...], padding=1)
-        grad_y = F.conv3d(image, sy[None, None, ...], padding=1)
-        grad_z = F.conv3d(image, sz[None, None, ...], padding=1)
-        return grad_x, grad_y, grad_z
+        grads = list()
+        for s in (sx, sy, sz):
+            grad = F.conv3d(image, s[None, None, ...], padding=1)
+            grad = torch.abs(grad)
+            grad = self._calc_avg_grad(grad) if self.avg_grad else grad
+            grads.append(grad)
+        return grads
 
-    # def _calc_avg_grad(self):
-    #     avg_kernel = torch.ones(self.patch_size, dtype=torch.float,
-    #                             device=self.image.device)[None, None, ...]
-    #     avg_kernel = avg_kernel / torch.sum(avg_kernel)
-    #     padding = [ps // 2 for ps in self.patch_size]
-    #     avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
-    #     return avg_grad.squeeze()
+    def _calc_avg_grad(self, grad):
+        avg_kernel = torch.ones(self.patch_size, dtype=grad.dtype,
+                                device=grad.device)[None, None, ...]
+        avg_kernel = avg_kernel / torch.sum(avg_kernel)
+        padding = [ps // 2 for ps in self.patch_size]
+        avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
+        return avg_grad
 
 
 class PatchesOr(_AbstractPatches):

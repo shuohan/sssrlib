@@ -6,21 +6,34 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from sssrlib.patches import Patches
 from pathlib import Path
 import matplotlib.pyplot as plt
+import nibabel as nib
 
 
 def test_dataloader():
     dirname = Path('results_dataloader')
     dirname.mkdir(exist_ok=True)
 
-    image = np.load('shepp3d.npy')
-    patch_size = (64, 64, 1)
-    patches = Patches(image, patch_size, named=False)
+    filename = '/data/oasis3/simu/sub-OAS30001_ses-d0129_acq-mprage_run-01_T1w_type-gauss_fwhm-4p0_scale-0p25_len-13.nii'
+    image = nib.load(filename).get_fdata(dtype=np.float32)
+    patch_size = (64, 1, 16)
+    # patches = Patches(image, patch_size, named=False)
+    # weights = patches.get_sample_weights()
+    # indices = torch.argsort(weights, descending=True)[:50]
+
+    # for i, ind in enumerate(indices):
+    #     patch = patches[ind].cpu().numpy().squeeze()
+    #     filename = dirname.joinpath('patch-%d.png' % i)
+    #     plt.imsave(filename, patch, cmap='gray')
+
+    patches = Patches(image, patch_size, sigma=2,
+                      named=False, avg_grad=True).cuda()
     weights = patches.get_sample_weights()
+    # indices = torch.argsort(weights, descending=True)[:500000:10000]
     indices = torch.argsort(weights, descending=True)[:50]
 
     for i, ind in enumerate(indices):
-        patch = patches[ind].cpu().numpy().squeeze()
-        filename = dirname.joinpath('patch-%d.png' % i)
+        patch = patches[int(ind)].cpu().numpy().squeeze()
+        filename = dirname.joinpath('avg_patch-%d.png' % i)
         plt.imsave(filename, patch, cmap='gray')
 
     # batch_size = 32
