@@ -269,7 +269,9 @@ class Patches(_AbstractPatches):
         weights = [grad[tuple(shifts)] for grad in grads]
         weights = [w for w, ps in zip(weights, self.patch_size) if ps > 1]
         weights = [w / torch.sum(w) for w in weights]
-        weights = torch.prod(torch.stack(weights), axis=0)[None, None, ...]
+        num_grads = len(weights)
+        weights = torch.prod(torch.stack(weights), axis=0) ** (1 / num_grads)
+        weights = weights[None, None, ...]
 
         kernel_size = [2 * s for s in self.weight_stride]
         stride = self.weight_stride
