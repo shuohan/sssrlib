@@ -46,14 +46,14 @@ def test_dataloader():
    
     batch_size = 100
     loader = patches.get_dataloader(batch_size, weighted=True)
-    # assert len(loader) == 1
-    # for data in loader:
-    #     assert data.shape == (100, 1, 64, 32)
+    assert len(loader) == 1
+    for data in loader:
+        assert data.shape == (100, 1, 64, 32)
 
-    # for i, patch in enumerate(data.squeeze()):
-    #     patch = patch.cpu().numpy()
-    #     filename = dirname.joinpath('patch-%d.png' % i)
-    #     plt.imsave(filename, patch, cmap='gray')
+    for i, patch in enumerate(data.squeeze()):
+        patch = patch.cpu().numpy()
+        filename = dirname.joinpath('patch-%d.png' % i)
+        plt.imsave(filename, patch, cmap='gray')
 # 
 #     weights = torch.zeros(len(patches))
 #     weights[100] = 1
