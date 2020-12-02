@@ -336,8 +336,8 @@ class Patches(_AbstractPatches):
         grid = np.meshgrid(coord, coord, coord, indexing='ij')
         sigmas = self.sigma / np.array(self.voxel_size)
         kernels = [np.exp(-(g ** 2) / (2 * s ** 2))
-                   for g, s in zip(gird, sigmas)]
-        kernel = np.prod(kernel, axis=0)
+                   for g, s in zip(grid, sigmas)]
+        kernel = np.prod(kernels, axis=0)
         kernel = kernel / np.sum(kernel)
         kernel = torch.tensor(kernel, device=self.image.device).float()
         kernel = kernel[None, None, ...]
