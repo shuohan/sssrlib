@@ -7,6 +7,7 @@ TODO:
 import numpy as np
 import torch
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from collections import namedtuple
 from collections.abc import Iterable
 from enum import IntEnum
@@ -15,6 +16,7 @@ from torch.nn.functional import interpolate
 from torch.utils.data import DataLoader, WeightedRandomSampler, RandomSampler
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage.filters import convolve
+from pathlib import Path
 
 from .transform import Identity
 
@@ -121,6 +123,8 @@ class Patches(_AbstractPatches):
         avg_grad (bool): Average the image gradients when calculating sampling
             weights.
         weight_stride(tuple[int]): The strides between sampling weights.
+        weight_dir (str): Save figures of weights into this directory if not
+            ``None``.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
@@ -129,7 +133,7 @@ class Patches(_AbstractPatches):
     def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
                  transforms=[], sigma=0, named=True, squeeze=True,
                  expand_channel_dim=True, avg_grad=False, verbose=False,
-                 weight_stride=(1, 1, 1)):
+                 weight_stride=(1, 1, 1), weight_dir=None):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
         self.image = self._permute_image(image)
@@ -142,6 +146,7 @@ class Patches(_AbstractPatches):
         self.avg_grad = avg_grad
         self.weight_stride = weight_stride
         self.verbose = verbose
+        self.weight_dir = weight_dir
 
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
@@ -285,59 +290,41 @@ class Patches(_AbstractPatches):
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
                   self._calc_shift(self.patch_size[1], self._ynum),
                   self._calc_shift(self.patch_size[2], self._znum)]
-        weights = [grad[tuple(shifts)] for grad in grads]
-        weights = [w for w, ps in zip(weights, self.patch_size) if ps > 1]
-        weights = [w / torch.sum(w) for w in weights]
+        grad_w = [grad[tuple(shifts)] for grad in grads]
+        grad_w = [w for w, ps in zip(grad_w, self.patch_size) if ps > 1]
+        grad_w = [w / torch.sum(w) for w in grad_w]
 
-
-        import matplotlib.pyplot as plt
-
-        for i, w in enumerate(weights):
-            w = (w - w.min()) / (w.max() - w.min())
-            w0 = w[w.shape[0]//2, :, :].cpu().numpy()
-            w1 = w[:, w.shape[1]//2, :].cpu().numpy()
-            w2 = w[:, :, w.shape[2]//2].cpu().numpy()
-            plt.imsave('weight%d0.png' % i, w0, vmin=0, vmax=0.95, cmap='jet')
-            plt.imsave('weight%d1.png' % i, w1, vmin=0, vmax=0.95, cmap='jet')
-            plt.imsave('weight%d2.png' % i, w2, vmin=0, vmax=0.95, cmap='jet')
-
-        num_grads = len(weights)
-        weights = torch.prod(torch.stack(weights), axis=0) ** (1 / num_grads)
-
-        pw = (weights - weights.min()) / (weights.max() - weights.min())
-        pw0 = pw[pw.shape[0]//2, :, :].cpu().numpy()
-        pw1 = pw[:, pw.shape[1]//2, :].cpu().numpy()
-        pw2 = pw[:, :, pw.shape[2]//2].cpu().numpy()
-        plt.imsave('prod_weight0.png', pw0, vmin=0, vmax=0.95, cmap='jet')
-        plt.imsave('prod_weight1.png', pw1, vmin=0, vmax=0.95, cmap='jet')
-        plt.imsave('prod_weight2.png', pw2, vmin=0, vmax=0.95, cmap='jet')
-
-        weights = weights[None, None, ...]
+        num_grads = len(grad_w)
+        prod_w = torch.prod(torch.stack(grad_w), axis=0) ** (1 / num_grads)
+        prod_w = prod_w[None, None, ...]
 
         kernel_size = [2 * s for s in self.weight_stride]
         stride = self.weight_stride
-        w_pool, indices = F.max_pool3d(weights, kernel_size=kernel_size,
+        pool_w, indices = F.max_pool3d(prod_w, kernel_size=kernel_size,
                                        stride=stride, return_indices=True)
+        unpool_w = F.max_unpool3d(pool_w, indices, kernel_size, stride=stride,
+                                  output_size=prod_w.shape)
 
-        weights = F.max_unpool3d(w_pool, indices, kernel_size, stride=stride,
-                                 output_size=weights.shape)
-
-
-        lw = (weights.squeeze() - weights.min()) / (weights.max() - weights.min())
-
-        lw0 = lw[lw.shape[0]//2, :, :].cpu().numpy()
-        lw1 = lw[:, lw.shape[1]//2, :].cpu().numpy()
-        lw2 = lw[:, :, lw.shape[2]//2].cpu().numpy()
-        plt.imsave('pool_weight0.png', lw0, vmin=0, vmax=0.95, cmap='jet')
-        plt.imsave('pool_weight1.png', lw1, vmin=0, vmax=0.95, cmap='jet')
-        plt.imsave('pool_weight2.png', lw2, vmin=0, vmax=0.95, cmap='jet')
-
-        weights = weights.flatten()
+        weights = unpool_w.flatten()
         weights = weights.repeat(len(self.transforms))
-
         weights = weights / torch.sum(weights)
 
+        if self.weight_dir is not None:
+            for i, w in enumerate(grad_w):
+                self._save_figures(w, 'grad_weights%d' % i, cmap='jet')
+            self._save_figures(prod_w, 'prod_weights', cmap='jet')
+            self._save_figures(unpool_w, 'pool_weights', cmap='jet')
+
         return weights
+
+    def _save_figures(self, image, prefix, cmap='jet'):
+        image = (image.squeeze() - image.min()) / (image.max() - image.min())
+        views = {'12': image[image.shape[0]//2, :, :].cpu().numpy(),
+                 '02': image[:, image.shape[1]//2, :].cpu().numpy(),
+                 '01': image[:, :, image.shape[2]//2].cpu().numpy()}
+        for k, v in views.items():
+            filename = Path(self.weight_dir, '%s_%s.png' % (prefix, k))
+            plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
 
     def _calc_shift(self, patch_size, image_size):
         left_shift = (patch_size - 1) // 2
@@ -349,71 +336,36 @@ class Patches(_AbstractPatches):
         """Calculates the image graident magnitude.
 
         """
-        import matplotlib.pyplot as plt
-
-        im = (self.image - self.image.min()) / (self.image.max() - self.image.min())
-        im0 = im[self.image.shape[0]//2, :, :].cpu().numpy()
-        im1 = im[:, self.image.shape[1]//2, :].cpu().numpy()
-        im2 = im[:, :, self.image.shape[2]//2].cpu().numpy()
-        plt.imsave('image0.png', im0, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('image1.png', im1, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('image2.png', im2, vmin=0, vmax=0.95, cmap='gray')
-
         image = self.image[None, None, ...]
-        image = self._denoise(image) if self.sigma > 0 else image
-
-        im = (image.squeeze() - image.min()) / (image.max() - image.min())
-        im0 = im[im.shape[0]//2, :, :].cpu().numpy()
-        im1 = im[:, im.shape[1]//2, :].cpu().numpy()
-        im2 = im[:, :, im.shape[2]//2].cpu().numpy()
-        plt.imsave('denoise0.png', im0, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('denoise1.png', im1, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('denoise2.png', im2, vmin=0, vmax=0.95, cmap='gray')
+        dn_im = self._denoise(image) if self.sigma > 0 else image
 
         mode = 'trilinear'
         scale_factor = [vs / max(self.voxel_size) for vs in self.voxel_size]
-        image = F.interpolate(image, scale_factor=scale_factor, mode=mode)
-
-        im = (image.squeeze() - image.min()) / (image.max() - image.min())
-        im0 = im[im.shape[0]//2, :, :].cpu().numpy()
-        im1 = im[:, im.shape[1]//2, :].cpu().numpy()
-        im2 = im[:, :, im.shape[2]//2].cpu().numpy()
-        plt.imsave('interp0.png', im0, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('interp1.png', im1, vmin=0, vmax=0.95, cmap='gray')
-        plt.imsave('interp2.png', im2, vmin=0, vmax=0.95, cmap='gray')
+        interp_im = F.interpolate(dn_im, scale_factor=scale_factor, mode=mode)
 
         shape = self.image.shape
-        grads = self._calc_sobel_grads(image)
-        grads = tuple(F.interpolate(g, size=shape, mode=mode).squeeze()
-                      for g in grads)
+        grads = self._calc_sobel_grads(interp_im)
+        grads = tuple(F.interpolate(g, size=shape, mode=mode) for g in grads)
+        grads = tuple(g.squeeze() for g in grads)
 
-        for i, g in enumerate(grads):
-            g = (g - g.min()) / (g.max() - g.min())
-            g0 = g[self.image.shape[0]//2, :, :].cpu().numpy()
-            g1 = g[:, self.image.shape[1]//2, :].cpu().numpy()
-            g2 = g[:, :, self.image.shape[2]//2].cpu().numpy()
-            plt.imsave('grad%d0.png' % i, g0, vmin=0, vmax=0.95, cmap='jet')
-            plt.imsave('grad%d1.png' % i, g1, vmin=0, vmax=0.95, cmap='jet')
-            plt.imsave('grad%d2.png' % i, g2, vmin=0, vmax=0.95, cmap='jet')
+        if self.weight_dir is not None:
+            self._save_figures(image, 'image', cmap='gray')
+            self._save_figures(dn_im, 'denosie_image', cmap='gray')
+            self._save_figures(interp_im, 'interp_image', cmap='gray')
+            for i, g in enumerate(grads):
+                self._save_figures(g, 'grads%d' % i, cmap='jet')
 
         return grads
 
     def _denoise(self, image):
         gauss_kernel = self._get_gaussian_kernel()
-
-        import matplotlib.pyplot as plt
-        gk = gauss_kernel.squeeze() / gauss_kernel.max()
-        k0 = gk[gk.shape[0]//2, :, :].cpu().numpy()
-        k1 = gk[:, gk.shape[1]//2, :].cpu().numpy()
-        k2 = gk[:, :, gk.shape[2]//2].cpu().numpy()
-
-        plt.imsave('kernel0.png', k0, vmin=0, vmax=1, cmap='jet')
-        plt.imsave('kernel1.png', k1, vmin=0, vmax=1, cmap='jet')
-        plt.imsave('kernel2.png', k2, vmin=0, vmax=1, cmap='jet')
-
         gauss_kernel = gauss_kernel.to(image.device)
         padding = [s // 2 for s in gauss_kernel.shape[2:]]
         image = F.conv3d(image, gauss_kernel, padding=padding)
+
+        if self.weight_dir is not None:
+            self._save_figures(gauss_kernel, 'denosie_kernel', cmap='jet')
+
         return image
 
     def _get_gaussian_kernel(self):

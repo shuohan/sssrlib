@@ -32,7 +32,8 @@ def test_dataloader():
     patches = Patches(image, patch_size, sigma=1, voxel_size=(1, 1, 4),
                       transforms=transforms, verbose=True,
                       named=False, avg_grad=False,
-                      weight_stride=weight_stride).cuda()
+                      weight_stride=weight_stride,
+                      weight_dir=dirname).cuda()
     # weights = patches.get_sample_weights()
     # # indices = torch.argsort(weights, descending=True)[:500000:10000]
 
