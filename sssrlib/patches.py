@@ -122,7 +122,7 @@ class Patches(_AbstractPatches):
     """
     def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
                  transforms=[], sigma=0, named=True, squeeze=True,
-                 expand_channel_dim=True, avg_grad=False,
+                 expand_channel_dim=True, avg_grad=False, verbose=False,
                  weight_stride=(1, 1, 1)):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
@@ -135,6 +135,7 @@ class Patches(_AbstractPatches):
         self.expand_channel_dim = expand_channel_dim
         self.avg_grad = avg_grad
         self.weight_stride = weight_stride
+        self.verbose = verbose
 
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
@@ -225,6 +226,10 @@ class Patches(_AbstractPatches):
 
         """
         tind, x, y, z = self._unravel_index(ind)
+        if self.verbose:
+            message = 'ind %d, tind %d, xind %d, yind %d, zind %d'
+            print(message % (ind, tind, x, y, z))
+
         loc = tuple(slice(s, s + p) for s, p in zip((x, y, z), self.patch_size))
         patch = self.transforms[tind](self.image[loc])
         patch = patch.squeeze() if self.squeeze else patch
