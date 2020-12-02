@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from enum import IntEnum
 from image_processing_3d import permute3d
 from torch.nn.functional import interpolate
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, WeightedRandomSampler, RandomSampler
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage.filters import convolve
 
@@ -41,7 +41,7 @@ class _AbstractPatches:
         """Returns the number of possible patches."""
         raise NotImplementedError
 
-    def get_dataloader(self, batch_size, num_workers=0):
+    def get_dataloader(self, batch_size, weighted=True, num_workers=0):
         """Returns the torch.utils.data.DataLoader of ``self``.
 
         Warning:
@@ -49,16 +49,22 @@ class _AbstractPatches:
 
         Args:
             batch_size (int): The number of samples per mini-batch.
+            weighted (bool): Weight sampling with image gradients.
 
         Returns:
             torch.utils.data.DataLoader: The data loader of the :class:`Patches`
                 instance itself.
 
         """
-        weights = self.get_sample_weights()
-        sampler = WeightedRandomSampler(weights, batch_size)
-        return DataLoader(self, batch_size=batch_size, sampler=sampler,
-                          num_workers=num_workers)
+        if weighted:
+            weights = self.get_sample_weights()
+            sampler = WeightedRandomSampler(weights, batch_size)
+        else:
+            sampler = RandomSampler(self, replacement=True,
+                                    num_samples=batch_size)
+        dataloader = DataLoader(self, batch_size=batch_size, sampler=sampler,
+                                num_workers=num_workers)
+        return dataloader
 
     def get_sample_weights(self):
         """Returns the sampling weights of each patch."""

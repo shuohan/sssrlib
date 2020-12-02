@@ -33,41 +33,36 @@ def test_dataloader():
                       transforms=transforms, verbose=True,
                       named=False, avg_grad=False,
                       weight_stride=weight_stride).cuda()
-    weights = patches.get_sample_weights()
-    # indices = torch.argsort(weights, descending=True)[:500000:10000]
+    # weights = patches.get_sample_weights()
+    # # indices = torch.argsort(weights, descending=True)[:500000:10000]
 
-    indices = torch.multinomial(weights, 100, replacement=True)
-    print(indices)
+    # indices = torch.multinomial(weights, 100, replacement=True)
+    # print(indices)
 
-    for i, ind in enumerate(indices):
-        patch = patches[int(ind)].cpu().numpy().squeeze()
-        filename = dirname.joinpath('avg_patch-%d.png' % i)
-        plt.imsave(filename, patch, cmap='gray')
+    # for i, ind in enumerate(indices):
+    #     patch = patches[int(ind)].cpu().numpy().squeeze()
+    #     filename = dirname.joinpath('weighted_patch-%d.png' % i)
+    #     plt.imsave(filename, patch, cmap='gray')
    
-    p1 = image[102-32:102+32, 200:201, 18-16:18+16]
-    p2 = transforms[2](p1)
-    fig = plt.figure()
-    plt.subplot(1, 2, 1)
-    plt.imshow(p1.squeeze(), cmap='gray')
-    plt.subplot(1, 2, 2)
-    plt.imshow(p2.squeeze(), cmap='gray')
-    fig.savefig(dirname.joinpath('fig.png'))
+    batch_size = 100
+    loader = patches.get_dataloader(batch_size, weighted=False)
+    assert len(loader) == 1
+    for data in loader:
+        assert data.shape == (100, 1, 64, 32)
 
+    for i, patch in enumerate(data.squeeze()):
+        patch = patch.cpu().numpy()
+        filename = dirname.joinpath('patch-%d.png' % i)
+        plt.imsave(filename, patch, cmap='gray')
+# 
+#     weights = torch.zeros(len(patches))
+#     weights[100] = 1
+#     loader.sampler.weights = weights
+#     assert len(loader) == 1
+#     for data in loader:
+#         assert np.array_equal(data, np.tile(patches[100], [32, 1, 1, 1]))
 
-    # batch_size = 32
-    # loader = patches.get_dataloader(batch_size)
-    # assert len(loader) == 1
-    # for data in loader:
-    #     assert data.shape == (32, 1, 64, 64)
-
-    # weights = torch.zeros(len(patches))
-    # weights[100] = 1
-    # loader.sampler.weights = weights
-    # assert len(loader) == 1
-    # for data in loader:
-    #     assert np.array_equal(data, np.tile(patches[100], [32, 1, 1, 1]))
-
-    # print('successful.')
+    print('successful.')
 
 
 if __name__ == '__main__':
