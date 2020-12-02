@@ -211,9 +211,17 @@ class Patches(_AbstractPatches):
         return self._len
 
     def __str__(self):
+        message = [t.__str__() for t in self.transforms]
+        prefix = ' ' * (len('Transforms:') + 2)
+        message = '[{}]'.format((',\n' + prefix).join(message))
+
         message = ['X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
+                   'Deniose sigma: {}'.format(self.sigma),
+                   'Voxel size: {}'.format(self.voxel_size),
+                   'Transforms: {}'.format(message),
+                   'Weith stride: {}'.format(self.weight_stride),
                    'Number of transforms: %d' % self._tnum,
                    'Number of patches along X: %d' % self._xnum,
                    'Number of patches along Y: %d' % self._ynum,
