@@ -333,8 +333,11 @@ class Patches(_AbstractPatches):
     def _get_gaussian_kernel(self):
         length = 4 * self.sigma * 2 + 1
         coord = np.arange(length) - length // 2
-        x, y, z = np.meshgrid(coord, coord, coord, indexing='ij')
-        kernel = np.exp(-(x ** 2 + y ** 2 + z ** 2) / (2 * self.sigma ** 2))
+        grid = np.meshgrid(coord, coord, coord, indexing='ij')
+        sigmas = self.sigma / np.array(self.voxel_size)
+        kernels = [np.exp(-(g ** 2) / (2 * s ** 2))
+                   for g, s in zip(gird, sigmas)]
+        kernel = np.prod(kernel, axis=0)
         kernel = kernel / np.sum(kernel)
         kernel = torch.tensor(kernel, device=self.image.device).float()
         kernel = kernel[None, None, ...]
