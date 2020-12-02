@@ -14,9 +14,9 @@ def test_dataloader():
     dirname = Path('results_dataloader')
     dirname.mkdir(exist_ok=True)
 
-    filename = '/data/oasis3/simu/sub-OAS30001_ses-d0129_acq-mprage_run-01_T1w_type-gauss_fwhm-4p0_scale-0p5_len-13.nii'
+    filename = '/data/oasis3/simu/sub-OAS30001_ses-d0129_acq-mprage_run-01_T1w_type-gauss_fwhm-4p0_scale-0p125_len-13.nii'
     image = nib.load(filename).get_fdata(dtype=np.float32)
-    patch_size = (64, 1, 32)
+    patch_size = (64, 1, 16)
     # patches = Patches(image, patch_size, named=False)
     # weights = patches.get_sample_weights()
     # indices = torch.argsort(weights, descending=True)[:50]
@@ -29,7 +29,7 @@ def test_dataloader():
     weight_stride = (2, 2, 1)
     transforms = [Identity(), Flip((0, )), Flip((2, ))]
     # transforms = create_rot_flip()
-    patches = Patches(image, patch_size, sigma=1, voxel_size=(1, 1, 2),
+    patches = Patches(image, patch_size, sigma=1, voxel_size=(1, 1, 4),
                       transforms=transforms, verbose=True,
                       named=False, avg_grad=False,
                       weight_stride=weight_stride).cuda()
@@ -48,7 +48,7 @@ def test_dataloader():
     loader = patches.get_dataloader(batch_size, weighted=True)
     assert len(loader) == 1
     for data in loader:
-        assert data.shape == (100, 1, 64, 32)
+        assert data.shape == (100, 1, 64, 16)
 
     for i, patch in enumerate(data.squeeze()):
         patch = patch.cpu().numpy()
