@@ -26,10 +26,10 @@ def test_dataloader():
     #     filename = dirname.joinpath('patch-%d.png' % i)
     #     plt.imsave(filename, patch, cmap='gray')
 
-    weight_stride = (4, 4, 2)
+    weight_stride = (2, 2, 1)
     transforms = [Identity(), Flip((0, )), Flip((2, ))]
     # transforms = create_rot_flip()
-    patches = Patches(image, patch_size, sigma=2, voxel_size=(1, 1, 2),
+    patches = Patches(image, patch_size, sigma=1, voxel_size=(1, 1, 2),
                       transforms=transforms, verbose=True,
                       named=False, avg_grad=False,
                       weight_stride=weight_stride).cuda()

@@ -288,8 +288,30 @@ class Patches(_AbstractPatches):
         weights = [grad[tuple(shifts)] for grad in grads]
         weights = [w for w, ps in zip(weights, self.patch_size) if ps > 1]
         weights = [w / torch.sum(w) for w in weights]
+
+
+        import matplotlib.pyplot as plt
+
+        for i, w in enumerate(weights):
+            w = (w - w.min()) / (w.max() - w.min())
+            w0 = w[w.shape[0]//2, :, :].cpu().numpy()
+            w1 = w[:, w.shape[1]//2, :].cpu().numpy()
+            w2 = w[:, :, w.shape[2]//2].cpu().numpy()
+            plt.imsave('weight%d0.png' % i, w0, vmin=0, vmax=0.95, cmap='jet')
+            plt.imsave('weight%d1.png' % i, w1, vmin=0, vmax=0.95, cmap='jet')
+            plt.imsave('weight%d2.png' % i, w2, vmin=0, vmax=0.95, cmap='jet')
+
         num_grads = len(weights)
         weights = torch.prod(torch.stack(weights), axis=0) ** (1 / num_grads)
+
+        pw = (weights - weights.min()) / (weights.max() - weights.min())
+        pw0 = pw[pw.shape[0]//2, :, :].cpu().numpy()
+        pw1 = pw[:, pw.shape[1]//2, :].cpu().numpy()
+        pw2 = pw[:, :, pw.shape[2]//2].cpu().numpy()
+        plt.imsave('prod_weight0.png', pw0, vmin=0, vmax=0.95, cmap='jet')
+        plt.imsave('prod_weight1.png', pw1, vmin=0, vmax=0.95, cmap='jet')
+        plt.imsave('prod_weight2.png', pw2, vmin=0, vmax=0.95, cmap='jet')
+
         weights = weights[None, None, ...]
 
         kernel_size = [2 * s for s in self.weight_stride]
@@ -299,6 +321,16 @@ class Patches(_AbstractPatches):
 
         weights = F.max_unpool3d(w_pool, indices, kernel_size, stride=stride,
                                  output_size=weights.shape)
+
+
+        lw = (weights.squeeze() - weights.min()) / (weights.max() - weights.min())
+
+        lw0 = lw[lw.shape[0]//2, :, :].cpu().numpy()
+        lw1 = lw[:, lw.shape[1]//2, :].cpu().numpy()
+        lw2 = lw[:, :, lw.shape[2]//2].cpu().numpy()
+        plt.imsave('pool_weight0.png', lw0, vmin=0, vmax=0.95, cmap='jet')
+        plt.imsave('pool_weight1.png', lw1, vmin=0, vmax=0.95, cmap='jet')
+        plt.imsave('pool_weight2.png', lw2, vmin=0, vmax=0.95, cmap='jet')
 
         weights = weights.flatten()
         weights = weights.repeat(len(self.transforms))
@@ -317,17 +349,52 @@ class Patches(_AbstractPatches):
         """Calculates the image graident magnitude.
 
         """
+        import matplotlib.pyplot as plt
+
+        im = (self.image - self.image.min()) / (self.image.max() - self.image.min())
+        im0 = im[self.image.shape[0]//2, :, :].cpu().numpy()
+        im1 = im[:, self.image.shape[1]//2, :].cpu().numpy()
+        im2 = im[:, :, self.image.shape[2]//2].cpu().numpy()
+        plt.imsave('image0.png', im0, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('image1.png', im1, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('image2.png', im2, vmin=0, vmax=0.95, cmap='gray')
+
         image = self.image[None, None, ...]
         image = self._denoise(image) if self.sigma > 0 else image
+
+        im = (image.squeeze() - image.min()) / (image.max() - image.min())
+        im0 = im[im.shape[0]//2, :, :].cpu().numpy()
+        im1 = im[:, im.shape[1]//2, :].cpu().numpy()
+        im2 = im[:, :, im.shape[2]//2].cpu().numpy()
+        plt.imsave('denoise0.png', im0, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('denoise1.png', im1, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('denoise2.png', im2, vmin=0, vmax=0.95, cmap='gray')
 
         mode = 'trilinear'
         scale_factor = [vs / max(self.voxel_size) for vs in self.voxel_size]
         image = F.interpolate(image, scale_factor=scale_factor, mode=mode)
 
+        im = (image.squeeze() - image.min()) / (image.max() - image.min())
+        im0 = im[im.shape[0]//2, :, :].cpu().numpy()
+        im1 = im[:, im.shape[1]//2, :].cpu().numpy()
+        im2 = im[:, :, im.shape[2]//2].cpu().numpy()
+        plt.imsave('interp0.png', im0, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('interp1.png', im1, vmin=0, vmax=0.95, cmap='gray')
+        plt.imsave('interp2.png', im2, vmin=0, vmax=0.95, cmap='gray')
+
         shape = self.image.shape
         grads = self._calc_sobel_grads(image)
         grads = tuple(F.interpolate(g, size=shape, mode=mode).squeeze()
                       for g in grads)
+
+        for i, g in enumerate(grads):
+            g = (g - g.min()) / (g.max() - g.min())
+            g0 = g[self.image.shape[0]//2, :, :].cpu().numpy()
+            g1 = g[:, self.image.shape[1]//2, :].cpu().numpy()
+            g2 = g[:, :, self.image.shape[2]//2].cpu().numpy()
+            plt.imsave('grad%d0.png' % i, g0, vmin=0, vmax=0.95, cmap='jet')
+            plt.imsave('grad%d1.png' % i, g1, vmin=0, vmax=0.95, cmap='jet')
+            plt.imsave('grad%d2.png' % i, g2, vmin=0, vmax=0.95, cmap='jet')
 
         return grads
 
