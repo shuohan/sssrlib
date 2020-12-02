@@ -29,7 +29,7 @@ def test_dataloader():
     weight_stride = (4, 4, 2)
     transforms = [Identity(), Flip((0, )), Flip((2, ))]
     # transforms = create_rot_flip()
-    patches = Patches(image, patch_size, sigma=2,
+    patches = Patches(image, patch_size, sigma=2, voxel_size=(1, 1, 2),
                       transforms=transforms, verbose=True,
                       named=False, avg_grad=False,
                       weight_stride=weight_stride).cuda()
@@ -45,15 +45,15 @@ def test_dataloader():
     #     plt.imsave(filename, patch, cmap='gray')
    
     batch_size = 100
-    loader = patches.get_dataloader(batch_size, weighted=False)
-    assert len(loader) == 1
-    for data in loader:
-        assert data.shape == (100, 1, 64, 32)
+    loader = patches.get_dataloader(batch_size, weighted=True)
+    # assert len(loader) == 1
+    # for data in loader:
+    #     assert data.shape == (100, 1, 64, 32)
 
-    for i, patch in enumerate(data.squeeze()):
-        patch = patch.cpu().numpy()
-        filename = dirname.joinpath('patch-%d.png' % i)
-        plt.imsave(filename, patch, cmap='gray')
+    # for i, patch in enumerate(data.squeeze()):
+    #     patch = patch.cpu().numpy()
+    #     filename = dirname.joinpath('patch-%d.png' % i)
+    #     plt.imsave(filename, patch, cmap='gray')
 # 
 #     weights = torch.zeros(len(patches))
 #     weights[100] = 1

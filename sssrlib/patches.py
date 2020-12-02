@@ -307,12 +307,17 @@ class Patches(_AbstractPatches):
 
     def _calc_image_grads(self):
         """Calculates the image graident magnitude."""
+        scale_factor = [vs / max(self.voxel_size) for vs in self.voxel_size]
+        image = F.interpolate(self.image[None, None, ...],
+                              scale_factor=scale_factor,
+                              mode='trilinear')
         if self.sigma > 0:
-            denoised_image = self._denoise(self.image[None, None, ...])
-        else:
-            denoised_image = self.image[None, None, ...]
-        grads = self._calc_sobel_grads(denoised_image)
-        grads = tuple(grad.squeeze() for grad in grads)
+            image = self._denoise(image)
+        grads = self._calc_sobel_grads(image)
+        grads = tuple(F.interpolate(grad, size=self.image.shape,
+                                    mode='trilinear').squeeze()
+                      for grad in grads)
+
         return grads
 
     def _denoise(self, image):
