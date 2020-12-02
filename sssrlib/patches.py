@@ -400,6 +400,17 @@ class Patches(_AbstractPatches):
 
     def _denoise(self, image):
         gauss_kernel = self._get_gaussian_kernel()
+
+        import matplotlib.pyplot as plt
+        gk = gauss_kernel.squeeze() / gauss_kernel.max()
+        k0 = gk[gk.shape[0]//2, :, :].cpu().numpy()
+        k1 = gk[:, gk.shape[1]//2, :].cpu().numpy()
+        k2 = gk[:, :, gk.shape[2]//2].cpu().numpy()
+
+        plt.imsave('kernel0.png', k0, vmin=0, vmax=1, cmap='jet')
+        plt.imsave('kernel1.png', k1, vmin=0, vmax=1, cmap='jet')
+        plt.imsave('kernel2.png', k2, vmin=0, vmax=1, cmap='jet')
+
         gauss_kernel = gauss_kernel.to(image.device)
         padding = [s // 2 for s in gauss_kernel.shape[2:]]
         image = F.conv3d(image, gauss_kernel, padding=padding)
