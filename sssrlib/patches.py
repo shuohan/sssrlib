@@ -226,7 +226,7 @@ class Patches(_AbstractPatches):
                    'Deniose sigma: {}'.format(self.sigma),
                    'Voxel size: {}'.format(self.voxel_size),
                    'Transforms: {}'.format(message),
-                   'Weith stride: {}'.format(self.weight_stride),
+                   'Weight stride: {}'.format(self.weight_stride),
                    'Number of transforms: %d' % self._tnum,
                    'Number of patches along X: %d' % self._xnum,
                    'Number of patches along Y: %d' % self._ynum,
