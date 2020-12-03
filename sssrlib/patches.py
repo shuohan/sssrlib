@@ -158,6 +158,7 @@ class Patches(_AbstractPatches):
             raise RuntimeError('"image" and "patches" cannot be both None.')
 
         self._tnum = len(self.transforms)
+        self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
         self._ind_mapping = None
@@ -165,10 +166,9 @@ class Patches(_AbstractPatches):
     def _init_from_image(self, image, x=0, y=1, z=2):
         self.x, self.y, self.z = (x, y, z)
         self.image = self._permute_image(image)
-        self._xnum, self._ynum, self._znum = self._init_patch_numbers()
 
     def _init_from_patches(self, patches):
-        attrs = ['x', 'y', 'z', 'image', '_xnum', '_ynum', '_znum']
+        attrs = ['x', 'y', 'z', 'image']
         for attr in attrs:
             setattr(self, attr, getattr(patches, attr))
 
@@ -246,6 +246,7 @@ class Patches(_AbstractPatches):
         message = ['X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
+                   'Patch size: {}'.format(self.patch_size),
                    'Deniose sigma: {}'.format(self.sigma),
                    'Voxel size: {}'.format(self.voxel_size),
                    'Transforms: {}'.format(message),
