@@ -125,6 +125,8 @@ class Patches(_AbstractPatches):
         weight_stride(tuple[int]): The strides between sampling weights.
         weight_dir (str): Save figures of weights into this directory if not
             ``None``.
+        compress (bool): Compress the number of available patches according to
+            non-zero sampling weights.
 
     Raises:
         RuntimeError: Incorrect :attr:`patch_size`.
@@ -133,7 +135,7 @@ class Patches(_AbstractPatches):
     def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
                  transforms=[], sigma=0, named=True, squeeze=True,
                  expand_channel_dim=True, avg_grad=False, verbose=False,
-                 weight_stride=(1, 1, 1), weight_dir=None):
+                 weight_stride=(1, 1, 1), weight_dir=None, compress=True):
         self.x, self.y, self.z = (x, y, z)
         self.sigma = sigma
         self.image = self._permute_image(image)
@@ -147,11 +149,13 @@ class Patches(_AbstractPatches):
         self.weight_stride = weight_stride
         self.verbose = verbose
         self.weight_dir = weight_dir
+        self.compress = compress
 
         self._tnum = len(self.transforms)
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
+        self._ind_mapping = None
 
     def _permute_image(self, image):
         """Permutes the input image."""
@@ -244,6 +248,9 @@ class Patches(_AbstractPatches):
             torch.Tensor or NamedData: The returned tensor.
 
         """
+        if self.compress: # from weight ind to patch ind
+            ind = self._ind_mapping[ind]
+
         tind, x, y, z = self._unravel_index(ind)
         if self.verbose:
             message = 'ind %d, tind %d, xind %d, yind %d, zind %d'
@@ -314,6 +321,11 @@ class Patches(_AbstractPatches):
                 self._save_figures(w, 'grad_weights%d' % i, cmap='jet')
             self._save_figures(prod_w, 'prod_weights', cmap='jet')
             self._save_figures(unpool_w, 'pool_weights', cmap='jet')
+
+        if self.compress:
+            self._ind_mapping = torch.where(weights > 0)[0]
+            self._ind_mapping = self._ind_mapping.cpu().numpy().tolist()
+            weights = weights[self._ind_mapping]
 
         return weights
 

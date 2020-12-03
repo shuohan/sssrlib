@@ -34,7 +34,19 @@ def test_dataloader():
                       named=False, avg_grad=False,
                       weight_stride=weight_stride,
                       weight_dir=dirname).cuda()
-    # weights = patches.get_sample_weights()
+
+    weights = patches.get_sample_weights()
+    ind = torch.argmax(weights)
+    patch = patches[ind]
+    orig_ind = patches._ind_mapping[ind]
+
+    ref_patches = Patches(image, patch_size, sigma=1, voxel_size=(1, 1, 4),
+                          transforms=transforms, verbose=True,
+                          named=False, avg_grad=False, compress=False,
+                          weight_stride=weight_stride).cuda()
+    ref_patch = ref_patches[orig_ind]
+    assert torch.equal(ref_patch, patch)
+
     # # indices = torch.argsort(weights, descending=True)[:500000:10000]
 
     # indices = torch.multinomial(weights, 100, replacement=True)
@@ -55,6 +67,8 @@ def test_dataloader():
         patch = patch.cpu().numpy()
         filename = dirname.joinpath('patch-%d.png' % i)
         plt.imsave(filename, patch, cmap='gray')
+
+    print(len(loader.sampler.weights), 2 ** 24) 
 # 
 #     weights = torch.zeros(len(patches))
 #     weights[100] = 1
