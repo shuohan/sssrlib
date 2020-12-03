@@ -132,16 +132,15 @@ class Patches(_AbstractPatches):
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, image, patch_size, x=0, y=1, z=2, voxel_size=(1, 1, 1),
+    def __init__(self, patch_size, image=None, x=0, y=1, z=2,
+                 voxel_size=(1, 1, 1), patches=None,
                  transforms=[], sigma=0, named=True, squeeze=True,
                  expand_channel_dim=True, avg_grad=False, verbose=False,
-                 weight_stride=(1, 1, 1), weight_dir=None, compress=True):
-        self.x, self.y, self.z = (x, y, z)
-        self.sigma = sigma
-        self.image = self._permute_image(image)
-        self.voxel_size = [voxel_size[i] for i in (self.x, self.y, self.z)]
+                 weight_stride=(1, 1, 1), weight_dir=None, compress=False):
+
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
+        self.sigma = sigma
         self.named = named
         self.squeeze = squeeze
         self.expand_channel_dim = expand_channel_dim
@@ -151,11 +150,29 @@ class Patches(_AbstractPatches):
         self.weight_dir = weight_dir
         self.compress = compress
 
+        if image is not None:
+            self._init_from_image(image, x, y, z, voxel_size)
+        elif patches is not None:
+            self._init_from_patches(patches)
+        else:
+            raise RuntimeError('"image" and "patches" cannot be both None.')
+
         self._tnum = len(self.transforms)
-        self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
         self._ind_mapping = None
+
+    def _init_from_image(self, image, x=0, y=1, z=2, voxel_size=(1, 1, 1)):
+        self.x, self.y, self.z = (x, y, z)
+        self.image = self._permute_image(image)
+        # TODO: use permuted voxel size as input
+        self.voxel_size = [voxel_size[i] for i in (self.x, self.y, self.z)]
+        self._xnum, self._ynum, self._znum = self._init_patch_numbers()
+
+    def _init_from_patches(self, patches):
+        attrs = ['x', 'y', 'z', 'image', 'voxel_size', '_xnum', '_ynum', '_znum']
+        for attr in attrs:
+            setattr(self, attr, getattr(patches, attr))
 
     def _permute_image(self, image):
         """Permutes the input image."""
@@ -172,6 +189,10 @@ class Patches(_AbstractPatches):
         return patch_size
 
     def _init_patch_numbers(self, shape=None):
+        shape = self.image.shape if shape is None else shape
+        return [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
+
+    def _init_patch_numbers_crop(self, shape=None):
         """Calculates the possible numbers of patches along x, y, and z.
 
         """
