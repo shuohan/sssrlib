@@ -456,7 +456,7 @@ class PatchesOr(_AbstractPatches):
         self._cumsum = np.cumsum(self._nums)
 
     def __len__(self):
-        return self._cumsum[-1]
+        return np.sum(self._nums)
 
     def __str__(self):
         message = ['Patches #%d\n%s' % (i,  p.__str__())
@@ -479,6 +479,7 @@ class PatchesOr(_AbstractPatches):
 
     def get_sample_weights(self):
         weights = [p.get_sample_weights() for p in self.patches]
+        self._cumsum = np.cumsum([len(w) for w in weights])
         weights = torch.cat(weights)
         return weights
 
