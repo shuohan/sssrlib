@@ -108,9 +108,7 @@ class Patches(_AbstractPatches):
             permute to the y-axis in the result image.
         z (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the z-axis in the result image.
-        voxel_size (tuple[float]): The size of the voxel. It is permuted along
-            with the image according to attributes :attr:`x`, :attr:`y`, and
-            :attr:`z`.
+        voxel_size (tuple[float]): The size of the voxel after permutation.
         transforms (iterable[sssrlib.transform.Transform]): Transform the an
             output image patch. If empty, :class:`sssrlib.transform.Identity`
             will be used.
@@ -122,7 +120,8 @@ class Patches(_AbstractPatches):
                 before the 0th dimension.
         avg_grad (bool): Average the image gradients when calculating sampling
             weights.
-        weight_stride(tuple[int]): The strides between sampling weights.
+        weight_stride(tuple[int]): The strides between sampling weights after
+            permutation.
         weight_dir (str): Save figures of weights into this directory if not
             ``None``.
         compress (bool): Compress the number of available patches according to
@@ -132,14 +131,15 @@ class Patches(_AbstractPatches):
         RuntimeError: Incorrect :attr:`patch_size`.
 
     """
-    def __init__(self, patch_size, image=None, x=0, y=1, z=2,
-                 voxel_size=(1, 1, 1), patches=None,
-                 transforms=[], sigma=0, named=True, squeeze=True,
-                 expand_channel_dim=True, avg_grad=False, verbose=False,
-                 weight_stride=(1, 1, 1), weight_dir=None, compress=False):
+    def __init__(self, patch_size, image=None, x=0, y=1, z=2, patches=None,
+                 transforms=[], sigma=0, voxel_size=(1, 1, 1),
+                 weight_stride=(1, 1, 1), weight_dir=None, avg_grad=False,
+                 compress=False, named=True, squeeze=True,
+                 expand_channel_dim=True, verbose=False):
 
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
+        self.voxel_size = voxel_size
         self.sigma = sigma
         self.named = named
         self.squeeze = squeeze
@@ -151,7 +151,7 @@ class Patches(_AbstractPatches):
         self.compress = compress
 
         if image is not None:
-            self._init_from_image(image, x, y, z, voxel_size)
+            self._init_from_image(image, x, y, z)
         elif patches is not None:
             self._init_from_patches(patches)
         else:
@@ -162,15 +162,13 @@ class Patches(_AbstractPatches):
         self._name_pattern = None
         self._ind_mapping = None
 
-    def _init_from_image(self, image, x=0, y=1, z=2, voxel_size=(1, 1, 1)):
+    def _init_from_image(self, image, x=0, y=1, z=2):
         self.x, self.y, self.z = (x, y, z)
         self.image = self._permute_image(image)
-        # TODO: use permuted voxel size as input
-        self.voxel_size = [voxel_size[i] for i in (self.x, self.y, self.z)]
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
 
     def _init_from_patches(self, patches):
-        attrs = ['x', 'y', 'z', 'image', 'voxel_size', '_xnum', '_ynum', '_znum']
+        attrs = ['x', 'y', 'z', 'image', '_xnum', '_ynum', '_znum']
         for attr in attrs:
             setattr(self, attr, getattr(patches, attr))
 
