@@ -134,8 +134,9 @@ class Patches(_AbstractPatches):
     def __init__(self, patch_size, image=None, x=0, y=1, z=2, patches=None,
                  transforms=[], sigma=0, voxel_size=(1, 1, 1),
                  weight_stride=(1, 1, 1), weight_dir=None, avg_grad=False,
-                 compress=False, named=True, squeeze=True,
-                 expand_channel_dim=True, verbose=False):
+                 use_grads=[True, True, True], compress=False,
+                 named=True, squeeze=True, expand_channel_dim=True,
+                 verbose=False):
 
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
@@ -149,6 +150,7 @@ class Patches(_AbstractPatches):
         self.verbose = verbose
         self.weight_dir = weight_dir
         self.compress = compress
+        self.use_grads = use_grads
 
         if image is not None:
             self._init_from_image(image, x, y, z)
@@ -251,6 +253,7 @@ class Patches(_AbstractPatches):
                    'Voxel size: {}'.format(self.voxel_size),
                    'Transforms: {}'.format(message),
                    'Weight stride: {}'.format(self.weight_stride),
+                   'Use gradients: {}'.format(self.use_grads),
                    'Number of transforms: %d' % self._tnum,
                    'Number of patches along X: %d' % self._xnum,
                    'Number of patches along Y: %d' % self._ynum,
@@ -312,13 +315,18 @@ class Patches(_AbstractPatches):
         return tind, xind, yind, zind
 
     def get_sample_weights(self):
-        """Returns the sampling weights of each patch."""
+        """Returns the sampling weights of each patch.
+
+        """
+        if self.weight_dir is not None:
+            self.weight_dir.mkdir(exist_ok=True, parents=True)
+
         grads = self._calc_image_grads()
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
                   self._calc_shift(self.patch_size[1], self._ynum),
                   self._calc_shift(self.patch_size[2], self._znum)]
         grad_w = [grad[tuple(shifts)] for grad in grads]
-        grad_w = [w for w, ps in zip(grad_w, self.patch_size) if ps > 1]
+        grad_w = [w for w, ug in zip(grad_w, self.use_grads) if ug]
         grad_w = [w / torch.sum(w) for w in grad_w]
 
         num_grads = len(grad_w)
