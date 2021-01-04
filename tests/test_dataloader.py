@@ -9,14 +9,24 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import nibabel as nib
 
+from scipy.signal import gaussian, convolve
+
+
+def create_gaussian_kernel(scale, length):
+    kernel = gaussian(length, scale / 2.355, sym=True)
+    kernel = kernel / np.sum(kernel)
+    return kernel
+
 
 def test_dataloader():
     dirname = Path('results_dataloader')
     dirname.mkdir(exist_ok=True)
 
+    kernel = create_gaussian_kernel(4, 9)[:, None]
+
     filename = '/data/oasis3/simu/sub-OAS30001_ses-d0129_acq-mprage_run-01_T1w_type-gauss_fwhm-4p0_scale-0p5_len-13.nii'
     image = nib.load(filename).get_fdata(dtype=np.float32)
-    patch_size = (32, 1, 16)
+    patch_size = (64 + 8, 1, 32)
     voxel_size = (1, 1, 2)
     use_grads = [True, False, False]
     # patches = Patches(image, patch_size, named=False)
@@ -111,6 +121,11 @@ def test_dataloader():
         filename = dirname.joinpath('gxy_patches/patch-%d.png' % i)
         plt.imsave(filename, patch, cmap='gray')
 
+        blur_patch = convolve(patch, kernel, mode='valid')
+        blur_patch = blur_patch[::2, :]
+        filename = dirname.joinpath('gxy_patches/blur_patch-%d.png' % i)
+        plt.imsave(filename, blur_patch, cmap='gray')
+
     loader_gz = patches_gz.get_dataloader(batch_size, weighted=True)
     for data in loader_gz:
         pass
@@ -120,6 +135,11 @@ def test_dataloader():
         patch = patch.cpu().numpy()
         filename = dirname.joinpath('gz_patches/patch-%d.png' % i)
         plt.imsave(filename, patch, cmap='gray')
+
+        blur_patch = convolve(patch, kernel, mode='valid')
+        blur_patch = blur_patch[::2, :]
+        filename = dirname.joinpath('gz_patches/blur_patch-%d.png' % i)
+        plt.imsave(filename, blur_patch, cmap='gray')
 
     # print('successful.')
 
