@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from collections import namedtuple
 from collections.abc import Iterable
 from enum import IntEnum
-from image_processing_3d import permute3d
+from improc3d import permute3d
 from torch.nn.functional import interpolate
 from torch.utils.data import DataLoader, WeightedRandomSampler, RandomSampler
 from scipy.ndimage import gaussian_filter
