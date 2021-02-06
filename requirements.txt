@@ -1,0 +1,2 @@
+torch >= 1.6.0
+git+https://github.com/shuohan/improc3d@0.5.0#egg=image-processing-3d
