@@ -1,2 +1,5 @@
-torch >= 1.7.0
-git+https://github.com/shuohan/improc3d@0.5.2
+scipy >= 1.5.2
+matplotlib >= 3.3.2
+improc3d >= 0.5.2
+numpy >= 1.18.5
+torch >= 1.6.0
