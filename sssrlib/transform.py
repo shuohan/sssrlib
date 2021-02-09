@@ -80,19 +80,15 @@ class Rot90(Transform):
 class Flip(Transform):
     """Flips an image patch along an axis.
 
-    Warning:
-        Currently, :attr:`axis` is fixed to 0 which is flipping along the
-        x-axis.
-
     Attributes:
         array (numpy.ndarray or torch.Tensor): The array to flip.
         axis (int or tuple[int]): The axis/axes to flip.
 
     """
-    def __init__(self, axis=0):
+    def __init__(self, axis=(0, )):
         super().__init__()
-        # self.axis = axis
-        self.axis = (0, )
+        self.axis = axis
+        # self.axis = (0, )
 
     def transform(self, patch):
         return flip(patch, axis=self.axis)
@@ -153,6 +149,6 @@ def flip(array, axis=0):
 
     """
     if type(array) is np.ndarray:
-        return np.flip(arary, axis)
+        return np.flip(array, axis)
     elif type(array) is torch.Tensor:
         return torch.flip(array, axis)

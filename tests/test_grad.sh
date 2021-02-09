@@ -7,4 +7,4 @@ docker run --gpus device=1 --rm -v $dir:$dir \
     -v $im_proc_3d_dir:$im_proc_3d_dir \
     --user $(id -u):$(id -g) \
     -e PYTHONPATH=$dir:$im_proc_3d_dir -w $dir/tests -t \
-    psf-est ./test_grad.py
+    pytorch-shan:1.7.0-cuda11.0-cudnn8-runtime ./test_grad.py
