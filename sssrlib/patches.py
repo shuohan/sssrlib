@@ -136,7 +136,7 @@ class Patches(_AbstractPatches):
                  weight_stride=(1, 1, 1), weight_dir=None, avg_grad=False,
                  use_grads=[True, True, True], compress=False,
                  named=True, squeeze=True, expand_channel_dim=True,
-                 verbose=False):
+                 verbose=False, crop=False):
 
         self.patch_size = self._parse_patch_size(patch_size)
         self.transforms = [Identity()] if len(transforms) == 0 else transforms
@@ -164,6 +164,10 @@ class Patches(_AbstractPatches):
         self._len = self._tnum * self._xnum * self._ynum * self._znum
         self._name_pattern = None
         self._ind_mapping = None
+        self._weight_map = None
+        self._grad_w = None
+        self._prod_w = None
+        self._unpool_w = None
 
     def _init_from_image(self, image, x=0, y=1, z=2):
         self.x, self.y, self.z = (x, y, z)
@@ -189,30 +193,41 @@ class Patches(_AbstractPatches):
         return patch_size
 
     def _init_patch_numbers(self, shape=None):
-        shape = self.image.shape if shape is None else shape
-        return [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
+        return self._init_patch_numbers_crop(shape)
+        # if self.crop:
+        #     return self._init_patch_numbers_crop(shape)
+        # else:
+        #     shape = self.image.shape if shape is None else shape
+        #     return [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
 
     def _init_patch_numbers_crop(self, shape=None):
         """Calculates the possible numbers of patches along x, y, and z.
 
         """
         shape = self.image.shape if shape is None else shape
+        nums = [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
 
+        if self._weight_map is None:
+            self._calc_weight_map()
+
+        lefts = [(s1 - s2)//2 for s1, s2 in zip(self.image.shape, shape)]
+        rights = [l + s for l, s in zip(lefts, shape)]
         while True:
-            nums = [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
-            if np.prod(nums) <= 2 ** 24 // self._tnum:
+            indices = tuple(slice(l, r) for r, l in zip(rights, lefts))
+            print(indices)
+            c_weights = self._weight_map[indices]
+            if np.sum(c_weights > 0) <= 2 ** 24 // self._tnum:
+                self._weight_map = None
                 break
-            shape = [s - 1 for s in shape]
+            lefts = [l + 1 for l in lefts]
+            rights = [r - 1 for r in rights]
 
         if shape != self.image.shape:
             print('Too many patches. Crop the image from', self.image.shape,
                   'to', tuple(shape))
-            lefts = [(s1 - s2)//2 for s1, s2 in zip(self.image.shape, shape)]
-            rights = [l + s for l, s in zip(lefts, shape)]
-            slices = tuple(slice(l, r) for l, r in zip(lefts, rights))
             self.image = self.image[slices]
-            assert nums == [s - ps + 1 for s, ps in
-                            zip(self.image.shape, self.patch_size)]
+            shape = self.image.shape 
+            nums = [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
 
         return nums
 
@@ -318,9 +333,27 @@ class Patches(_AbstractPatches):
         """Returns the sampling weights of each patch.
 
         """
+        if self._weight_map is None:
+            self._calc_weight_map()
+
+        weights = self._weight_map.repeat(len(self.transforms))
+        weights = weights / torch.sum(weights)
+
+        if self.compress:
+            self._ind_mapping = torch.where(weights > 0)[0]
+            self._ind_mapping = self._ind_mapping.cpu().numpy().tolist()
+            weights = weights[self._ind_mapping]
+
         if self.weight_dir is not None:
             self.weight_dir.mkdir(exist_ok=True, parents=True)
+            for i, w in enumerate(self._grad_w):
+                self._save_figures(w, 'grad_weights%d' % i, cmap='jet')
+            self._save_figures(self._prod_w, 'prod_weights', cmap='jet')
+            self._save_figures(self._unpool_w, 'pool_weights', cmap='jet')
 
+        return weights
+
+    def _calc_weight_map(self):
         grads = self._calc_image_grads()
         shifts = [self._calc_shift(self.patch_size[0], self._xnum),
                   self._calc_shift(self.patch_size[1], self._ynum),
@@ -340,22 +373,10 @@ class Patches(_AbstractPatches):
         unpool_w = F.max_unpool3d(pool_w, indices, kernel_size, stride=stride,
                                   output_size=prod_w.shape)
 
-        weights = unpool_w.flatten()
-        weights = weights.repeat(len(self.transforms))
-        weights = weights / torch.sum(weights)
-
-        if self.weight_dir is not None:
-            for i, w in enumerate(grad_w):
-                self._save_figures(w, 'grad_weights%d' % i, cmap='jet')
-            self._save_figures(prod_w, 'prod_weights', cmap='jet')
-            self._save_figures(unpool_w, 'pool_weights', cmap='jet')
-
-        if self.compress:
-            self._ind_mapping = torch.where(weights > 0)[0]
-            self._ind_mapping = self._ind_mapping.cpu().numpy().tolist()
-            weights = weights[self._ind_mapping]
-
-        return weights
+        self._grad_w = grad_w
+        self._prod_w = prod_w
+        self._unpool_w = unpool_w
+        self._weight_map = unpool_w.flatten()
 
     def _save_figures(self, image, prefix, cmap='jet'):
         image = (image.squeeze() - image.min()) / (image.max() - image.min())
