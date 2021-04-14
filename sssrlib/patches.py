@@ -171,21 +171,33 @@ class Patches(AbstractPatches):
         return '\n'.join(message)
 
     def __getitem__(self, ind):
-        """Returns a patch at indices.
+        """Returns a patch at the index.
 
         Args:
-            ind (tuple[int]): The indices (x_start, y_start, z_start) of a
-                patch.
+            ind (int): The flattened index of a patch.
 
         Returns:
             torch.Tensor or NamedData: The returned tensor.
 
         """
+        ind = self.unravel_index(ind)
         patch = self.get_patch(ind)
         if self.named:
             name = self.get_name(ind)
             patch = NamedData(name, patch)
         return patch
+
+    def unravel_index(self, ind):
+        """Converts the flattened index into transform index and array coords.
+
+        Args:
+            index (int): The flattened index.
+
+        Returns:
+            tuple[int]: The array coordinates.
+
+        """
+        return np.unravel_index(ind, [self.xnum, self.ynum, self.znum])
 
     def get_patch(self, ind):
         if self.verbose:
@@ -217,6 +229,7 @@ class TransformedPatches(AbstractPatches):
         self.transform = transform
 
     def __getitem__(self, ind):
+        ind = self.patches.unravel_index(ind)
         patch = self.patches.get_patch(ind)
         patch = self.transform(patch)
         if self.patches.named:
