@@ -38,6 +38,10 @@ class Transform:
         """
         raise NotImplementedError
 
+    def get_name(self):
+        """Returns the name of the transform."""
+        raise NotImplementedError
+
 
 class Identity(Transform):
     """Does not change the input patch.
@@ -73,8 +77,11 @@ class Rot90(Transform):
         return rot90(patch, self.k, self.axes)
 
     def __str__(self):
-        message = 'rotation by %d degrees in %s plane'
+        message = 'Rotation by %d degrees in %s plane'
         return message % ((self.k * 90), str(self.axes))
+
+    def get_name(self):
+        return 'rot%d' % (self.k * 90)
 
 
 class Flip(Transform):
@@ -96,6 +103,9 @@ class Flip(Transform):
     def __str__(self):
         return 'flip along %s axis' % str(self.axis)
 
+    def get_name(self):
+        return 'flip'
+
 
 class Compose(Transform):
     """Composes multiple transforms.
@@ -116,6 +126,10 @@ class Compose(Transform):
 
     def __str__(self):
         result = ', '.join([t.__str__() for t in self.transforms])
+        return result
+
+    def get_name(self):
+        result = '-'.join([t.get_name() for t in self.transforms])
         return result
 
 

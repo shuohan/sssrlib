@@ -5,8 +5,8 @@ import torch
 import time
 from torch.nn.functional import interpolate
 
-from sssrlib.patches import Patches, NamedData
-from sssrlib.transform import Rot90, Flip, create_rot_flip
+from sssrlib.patches import Patches, NamedData, TransformedPatches
+from sssrlib.transform import Rot90, Flip, Compose
 
 
 def test_patches():
@@ -60,27 +60,28 @@ def test_patches():
     assert len(patches_2d) == 37 * 27 * 121
     assert np.array_equal(patches_2d[4, 0, 72], image[4:68, :64, 72:73])
 
-    # # augment
-    # transforms = create_rot_flip()
-    # patches_2d = Patches(ps2d, image, transforms=transforms, squeeze=False,
-    #                      expand_channel_dim=False, named=False)
-    # patch = patches_2d[1314000]
-    # patch = np.flip(np.rot90(patch, k=2, axes=(0, 1)), axis=0)
-    # assert np.array_equal(patch, image[31:31+ps2d[0], 3:3+ps2d[1], 61:61+ps2d[2]])
-    # assert len(patches_2d) == 8 * 41 * 46 * 121
+    # augment
+    transform = Compose(Flip(), Rot90(k=2))
+    patches_2d = Patches(ps2d, image, squeeze=False, expand_channel_dim=False, named=False)
+    patches_2d = TransformedPatches(patches_2d, transform)
+    patch = patches_2d[31, 3, 61]
+    patch = np.flip(np.rot90(patch, k=2, axes=(0, 1)), axis=0)
+    assert np.array_equal(patch, image[31:31+ps2d[0], 3:3+ps2d[1], 61:61+ps2d[2]])
+    assert len(patches_2d) == 41 * 46 * 121
 
-    # # together
-    # patches_2d = Patches(64, image, x=2, y=0, z=1, transforms=transforms,
-    #                      named=True, squeeze=True, expand_channel_dim=True)
-    # patches_2d.cuda()
-    # image_trans = np.transpose(image, [2, 0, 1])
-    # patch = patches_2d[1314000]
-    # ref_patch = image_trans[46:46+64, 22:22+64, 0]
-    # ref_patch = torch.tensor(ref_patch, dtype=torch.float32).cuda()
-    # ref_patch = torch.rot90(ref_patch, 3)[None, ...]
-    # assert patch.name == 'ind-t6-x46-y22-z00'
-    # assert len(patches_2d) == 8 * 58 * 37 * 90
-    # assert torch.allclose(patch.data, ref_patch)
+    # together
+    patches_2d = Patches(64, image, x=2, y=0, z=1, named=True, squeeze=True, expand_channel_dim=True)
+    transform = Compose(Rot90(k=1), Flip())
+    patches_2d = TransformedPatches(patches_2d, transform)
+    patches_2d.cuda()
+    image_trans = np.transpose(image, [2, 0, 1])
+    patch = patches_2d[46, 22, 0]
+    patch_data = torch.rot90(torch.flip(patch.data, [0]), 3)[None, ...]
+    ref_patch = image_trans[46:46+64, 22:22+64, 0]
+    ref_patch = torch.tensor(ref_patch, dtype=torch.float32).cuda()
+    assert patch.name == 'ind-x46-y22-z00_rot90-flip'
+    assert len(patches_2d) == 58 * 37 * 90
+    assert torch.allclose(patch_data, ref_patch)
 
     # # create from patches
     # patches_p1 = Patches(64, patches=patches_2d,  transforms=transforms,

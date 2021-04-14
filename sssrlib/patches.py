@@ -18,8 +18,6 @@ from scipy.ndimage import gaussian_filter
 from scipy.ndimage.filters import convolve
 from pathlib import Path
 
-from .transform import Identity
-
 
 NamedData = namedtuple('NamedData', ['name', 'data'])
 """Data with its name.
@@ -31,7 +29,7 @@ Args:
 """
 
 
-class _AbstractPatches:
+class AbstractPatches:
     """Abstract class to output patches from a 3D image.
 
     """
@@ -43,37 +41,26 @@ class _AbstractPatches:
         """Returns the number of possible patches."""
         raise NotImplementedError
 
-    def get_dataloader(self, batch_size, weighted=True, num_workers=0):
-        """Returns the torch.utils.data.DataLoader of ``self``.
-
-        Warning:
-            Only support 2D patches with size [x, y, 1] for now.
-
-        Args:
-            batch_size (int): The number of samples per mini-batch.
-            weighted (bool): Weight sampling with image gradients.
+    def cpu(self):
+        """Puts patches into CPU.
 
         Returns:
-            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
-                instance itself.
+            Patches: The instance itself.
 
         """
-        if weighted:
-            weights = self.get_sample_weights()
-            sampler = WeightedRandomSampler(weights, batch_size)
-        else:
-            sampler = RandomSampler(self, replacement=True,
-                                    num_samples=batch_size)
-        dataloader = DataLoader(self, batch_size=batch_size, sampler=sampler,
-                                num_workers=num_workers)
-        return dataloader
+        raise NotImplementedError
 
-    def get_sample_weights(self):
-        """Returns the sampling weights of each patch."""
+    def cuda(self):
+        """Puts patches into CUDA.
+
+        Returns:
+            Patches: The instance itself.
+
+        """
         raise NotImplementedError
 
 
-class Patches(_AbstractPatches):
+class Patches(AbstractPatches):
     """Outputs patches from a 3D image.
 
     Args:
@@ -122,6 +109,18 @@ class Patches(_AbstractPatches):
         self._xnum, self._ynum, self._znum = self._init_patch_numbers()
         self._len = self._xnum * self._ynum * self._znum
 
+    @property
+    def xnum(self):
+        return self._xnum
+
+    @property
+    def ynum(self):
+        return self._ynum
+
+    @property
+    def znum(self):
+        return self._znum
+
     def _parse_patch_size(self, patch_size):
         """Converts :class:`int` patch size to :class:`tuple`."""
         if not isinstance(patch_size, Iterable):
@@ -149,22 +148,10 @@ class Patches(_AbstractPatches):
         return [s - ps + 1 for s, ps in zip(shape, self.patch_size)]
 
     def cuda(self):
-        """Puts patches into CUDA.
-
-        Returns:
-            Patches: The instance itself.
-
-        """
         self.image = self.image.cuda()
         return self
 
     def cpu(self):
-        """Puts patches into CPU.
-
-        Returns:
-            Patches: The instance itself.
-
-        """
         self.image = self.image.cpu()
         return self
 
@@ -173,15 +160,10 @@ class Patches(_AbstractPatches):
         return self._len
 
     def __str__(self):
-        message = [t.__str__() for t in self.transforms]
-        prefix = ' ' * (len('Transforms:') + 2)
-        message = '[{}]'.format((',\n' + prefix).join(message))
         message = ['X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
                    'Patch size: {}'.format(self.patch_size),
-                   'Transforms: {}'.format(message),
-                   'Number of transforms: %d' % self._tnum,
                    'Number of patches along X: %d' % self._xnum,
                    'Number of patches along Y: %d' % self._ynum,
                    'Number of patches along Z: %d' % self._znum,
@@ -199,16 +181,22 @@ class Patches(_AbstractPatches):
             torch.Tensor or NamedData: The returned tensor.
 
         """
+        patch = self.get_patch(ind)
+        if self.named:
+            name = self.get_name(ind)
+            patch = NamedData(name, patch)
+        return patch
+
+    def get_patch(self, ind):
         if self.verbose:
             print('x_start %d, y_start %d, z_start %d' % ind)
         bbox = tuple(slice(s, s + p) for s, p in zip(ind, self.patch_size))
         patch = self.image[bbox]
         patch = patch.squeeze() if self.squeeze else patch
         patch = patch[None, ...] if self.expand_channel_dim else patch
-        patch = NamedData(self._get_name(ind), patch) if self.named else patch
         return patch
 
-    def _get_name(self, ind):
+    def get_name(self, ind):
         if not hasattr(self, '_name_pattern'):
             nx = len(str(self._xnum))
             ny = len(str(self._ynum))
@@ -218,15 +206,50 @@ class Patches(_AbstractPatches):
         return self._name_pattern % ind
 
 
-class PatchesOr(_AbstractPatches):
-    """Selects one of :class:`Patches` instance to output patches.
+class TransformedPatches(AbstractPatches):
+    """Wrapper class to transform Pathces.
+
+    See :mod:`ssrlib.transform` for more details of the transforms.
+
+    """
+    def __init__(self, patches, transform):
+        self.patches = patches
+        self.transform = transform
+
+    def __getitem__(self, ind):
+        patch = self.patches.get_patch(ind)
+        patch = self.transform(patch)
+        if self.patches.named:
+            name = self.patches.get_name(ind)
+            name = '_'.join([name, self.transform.get_name()])
+            patch = NamedData(name, patch)
+        return patch
+
+    def __len__(self):
+        return self.patches.__len__()
+
+    def __str__(self):
+        return '\n'.join([self.transform.__str__(), self.patches.__str__()])
+
+    def cpu(self):
+        self.patches.cpu()
+        return self
+
+    def cuda(self):
+        self.patches.cuda()
+        return self
+
+
+class PatchesOr(AbstractPatches):
+    """Selects one of :class:`AbstractPatches` instance to output patches.
 
     Note:
-        This class is mainly used to select from different image orientations,
-        for example, x-z or y-z patches.
+        This class can be used to select from different image orientations,
+        for example, x-z or y-z patches, and transforms.
 
     Attributes:
-        patches (list[Patches]): The :class:`Patches` instances to select from.
+        patches (list[AbstractPatches]): The :class:`AbstractPatches` instances
+            to select from.
 
     """
     def __init__(self, *patches):
@@ -268,7 +291,7 @@ class PatchesOr(_AbstractPatches):
         raise NotImplementedError
 
 
-class PatchesAnd(_AbstractPatches):
+class PatchesAnd(AbstractPatches):
     """Returns a patch from each of :class:`Patches` instances.
 
     Note:
@@ -341,15 +364,6 @@ class PatchesAnd(_AbstractPatches):
         self._unpool_w = unpool_w
         self._weight_map = unpool_w.flatten()
 
-    def _save_figures(self, image, prefix, cmap='jet'):
-        image = (image.squeeze() - image.min()) / (image.max() - image.min())
-        views = {'12': image[image.shape[0]//2, :, :].cpu().numpy(),
-                 '02': image[:, image.shape[1]//2, :].cpu().numpy(),
-                 '01': image[:, :, image.shape[2]//2].cpu().numpy()}
-        for k, v in views.items():
-            filename = Path(self.weight_dir, '%s_%s.png' % (prefix, k))
-            plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
-
 
     def _calc_avg_grad(self, grad):
         avg_kernel = torch.ones(self.patch_size, dtype=grad.dtype,
@@ -365,69 +379,34 @@ class PatchesAnd(_AbstractPatches):
         shift = slice(left_shift, right_shift)
         return shift
 
-    def _calc_image_grads(self):
-        """Calculates the image graident magnitude.
+    def get_dataloader(self, batch_size, weighted=True, num_workers=0):
+        """Returns the torch.utils.data.DataLoader of ``self``.
+
+        Warning:
+            Only support 2D patches with size [x, y, 1] for now.
+
+        Args:
+            batch_size (int): The number of samples per mini-batch.
+            weighted (bool): Weight sampling with image gradients.
+
+        Returns:
+            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
+                instance itself.
 
         """
-        image = self.image[None, None, ...]
-        dn_im = self._denoise(image) if self.sigma > 0 else image
+        if weighted:
+            weights = self.get_sample_weights()
+            sampler = WeightedRandomSampler(weights, batch_size)
+        else:
+            sampler = RandomSampler(self, replacement=True,
+                                    num_samples=batch_size)
+        dataloader = DataLoader(self, batch_size=batch_size, sampler=sampler,
+                                num_workers=num_workers)
+        return dataloader
 
-        mode = 'trilinear'
-        scale_factor = [vs / max(self.voxel_size) for vs in self.voxel_size]
-        interp_im = F.interpolate(dn_im, scale_factor=scale_factor, mode=mode)
-
-        shape = self.image.shape
-        grads = self._calc_sobel_grads(interp_im)
-        grads = tuple(F.interpolate(g, size=shape, mode=mode) for g in grads)
-        grads = tuple(g.squeeze() for g in grads)
-
-        if self.weight_dir is not None:
-            self._save_figures(image, 'image', cmap='gray')
-            self._save_figures(dn_im, 'denosie_image', cmap='gray')
-            self._save_figures(interp_im, 'interp_image', cmap='gray')
-            for i, g in enumerate(grads):
-                self._save_figures(g, 'grads%d' % i, cmap='jet')
-
-        return grads
-
-    def _denoise(self, image):
-        gauss_kernel = self._get_gaussian_kernel()
-        gauss_kernel = gauss_kernel.to(image.device)
-        padding = [s // 2 for s in gauss_kernel.shape[2:]]
-        image = F.conv3d(image, gauss_kernel, padding=padding)
-
-        if self.weight_dir is not None:
-            self._save_figures(gauss_kernel, 'denosie_kernel', cmap='jet')
-
-        return image
-
-    def _get_gaussian_kernel(self):
-        length = 4 * self.sigma * 2 + 1
-        coord = np.arange(length) - length // 2
-        grid = np.meshgrid(coord, coord, coord, indexing='ij')
-        sigmas = self.sigma / np.array(self.voxel_size)
-        kernels = [np.exp(-(g ** 2) / (2 * s ** 2))
-                   for g, s in zip(grid, sigmas)]
-        kernel = np.prod(kernels, axis=0)
-        kernel = kernel / np.sum(kernel)
-        kernel = torch.tensor(kernel, device=self.image.device).float()
-        kernel = kernel[None, None, ...]
-        return kernel
-
-    def _calc_sobel_grads(self, image):
-        sz = torch.stack((torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]]),
-                          torch.tensor([[1, 0, -1], [2, 0, -2], [1, 0, -1]]),
-                          torch.tensor([[0, 0,  0], [1, 0, -1], [0, 0,  0]])))
-        sz = sz.float().to(image.device)
-        sx = sz.permute([2, 0, 1])
-        sy = sz.permute([1, 2, 0])
-        grads = list()
-        for s in (sx, sy, sz):
-            grad = F.conv3d(image, s[None, None, ...], padding=1)
-            grad = torch.abs(grad)
-            grad = self._calc_avg_grad(grad) if self.avg_grad else grad
-            grads.append(grad)
-        return grads
+    def get_sample_weights(self):
+        """Returns the sampling weights of each patch."""
+        raise NotImplementedError
 
 
 """
