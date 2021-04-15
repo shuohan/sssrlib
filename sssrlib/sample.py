@@ -6,6 +6,7 @@ import numpy as np
 import random
 import torch
 import torch.nn.functional as F
+from enum import Enum
 from pathlib import Path
 
 
@@ -30,16 +31,25 @@ class UniformSample(Sample):
         return random.choices(range(len(self.patches)), k=self.num_samples)
 
 
+class ProbOp(str, Enum):
+    """Enum of the probability operator.
+
+    """
+    AND = 'and'
+    OR = 'or'
+
+
 class GradSample(Sample):
     """Samples patches weighted by image gradients.
 
     """
     def __init__(self, patches, num_sel, sigma=1, voxel_size=(1, 1, 1),
-                 use_grads=[True, False, True]):
+                 use_grads=[True, False, True], weights_op=ProbOp.AND):
         super().__init__(patches, num_sel)
         self.sigma = 3
         self.voxel_size = np.array(voxel_size) / min(voxel_size)
         self.use_grads = use_grads
+        self.weights_op = ProbOp(weights_op)
         self._calc_sample_weights()
 
     def _calc_image_grads(self):
@@ -122,8 +132,8 @@ class GradSample(Sample):
         grads = [g for g, ug in zip(self._gradients, self.use_grads) if ug]
         weights = self._calc_weights_at_patch_center(grads)
         weights = [w / torch.sum(w) for w in weights]
-        weights = torch.prod(torch.stack(weights), axis=0)
-        self._weights = weights.flatten()
+        self._weights = self._combine_weights(weights)
+        self._weights_flat = self._weights.flatten()
 
     def _calc_weights_at_patch_center(self, weights):
         """Crops the gradiant maps to align them with the patch centers.
@@ -146,8 +156,17 @@ class GradSample(Sample):
         shift = slice(left_shift, right_shift)
         return shift
 
+    def _combine_weights(self, weights):
+        """Combines normalized weights using fuzzy or/and operator."""
+        if self.weights_op is ProbOp.AND:
+            weights = torch.prod(torch.stack(weights), axis=0)
+        elif self.weights_op is ProbOp.OR:
+            rev_weights = [1 - w for w in weights]
+            weights = 1.0 - torch.prod(torch.stack(rev_weights), axis=0)
+        return weights
+
     def sample(self):
-        return torch.multinomial(self._weights, self.num_samples,
+        return torch.multinomial(self._weights_flat, self.num_samples,
                                  replacement=True)
 
     def save_figures(self, dirname):
@@ -164,6 +183,7 @@ class GradSample(Sample):
         self._save_fig(dirname, self._interpolated, 'interpolated', cmap='gray')
         for i, g in enumerate(self._gradients):
             self._save_fig(dirname, g, 'gradiant-%d' % i, cmap='jet')
+        self._save_fig(dirname, self._weights, 'weights', cmap='jet')
 
     def _save_fig(self, dirname, image, prefix, cmap='jet'):
         image = (image.squeeze() - image.min()) / (image.max() - image.min())

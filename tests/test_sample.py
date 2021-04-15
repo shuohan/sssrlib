@@ -15,7 +15,7 @@ def test_sample():
     image = zoom(image, (1, 1, 0.4))
     patches = Patches((32, 1, 10), image, named=False)
 
-    dirname = 'results_sample'
+    dirname = 'results_sample/and'
     os.system('rm -rf %s' % dirname)
     sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5))
     sample.save_figures(dirname)
@@ -27,7 +27,7 @@ def test_sample():
         plt.imshow(patch.squeeze())
         fig.savefig(Path(dirname, '%s.png' % ind))
 
-    assert len(sample._weights) == len(patches)
+    assert len(sample._weights_flat) == len(patches)
     grads = [sample._gradients[0], sample._gradients[2]]
 
     starts = [(ps - 1) // 2 for ps in patches.patch_size]
@@ -41,11 +41,16 @@ def test_sample():
     grads[1] = grads[1] / sum1
     grad = grads[0] * grads[1]
     for i in range(100):
-        ind = int(np.random.uniform(0, len(sample._weights)))
+        ind = int(np.random.uniform(0, len(sample._weights_flat)))
         x, y, z = np.unravel_index(ind, [patches.xnum, patches.ynum, patches.znum])
-        assert sample._weights[ind] == grad[x + (patches.patch_size[0] - 1)//2,
-                                            y + (patches.patch_size[1] - 1)//2,
-                                            z + (patches.patch_size[2] - 1)//2]
+        assert sample._weights_flat[ind] == grad[x + (patches.patch_size[0] - 1)//2,
+                                                 y + (patches.patch_size[1] - 1)//2,
+                                                 z + (patches.patch_size[2] - 1)//2]
+
+    sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5), weights_op='or')
+    dirname = 'results_sample/or'
+    os.system('rm -rf %s' % dirname)
+    sample.save_figures(dirname)
 
     print('successful')
 
