@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from enum import Enum
 from pathlib import Path
+from improc3d import padcrop3d
 
 
 class Sample:
@@ -50,7 +51,6 @@ class GradSample(Sample):
         self.voxel_size = np.array(voxel_size) / min(voxel_size)
         self.use_grads = use_grads
         self.weights_op = ProbOp(weights_op)
-        self._calc_sample_weights()
 
     def _calc_image_grads(self):
         """Calculates the image graident magnitude.
@@ -80,6 +80,7 @@ class GradSample(Sample):
         shape = self.patches.image.shape
         grads = tuple(F.interpolate(g, size=shape, mode=mode) for g in grads)
         self._gradients = tuple(g.squeeze() for g in grads)
+        return self._gradients
 
     def _calc_denoise_kernel(self):
         """Use a 3D Gaussian function as the denoising kernel.
@@ -119,17 +120,8 @@ class GradSample(Sample):
         return grads
 
     def _calc_sample_weights(self):
-        """Calculates sampling weights for patches.
-
-        Suppose the sampling probability of a patch depends on gradients along
-        some of the axes, e.g., p(gx, gy). Further suppose the gradients are
-        independent from each other; therefore, p(gx, gy) = p(gx) p(gy). The
-        probabilty along an axis, e.g., p(gz), should be normalized across all
-        patches.
-
-        """
-        self._calc_image_grads()
-        grads = [g for g, ug in zip(self._gradients, self.use_grads) if ug]
+        gradients = self._calc_image_grads()
+        grads = [g for g, ug in zip(gradients, self.use_grads) if ug]
         weights = self._calc_weights_at_patch_center(grads)
         weights = [w / torch.sum(w) for w in weights]
         self._weights = self._combine_weights(weights)
@@ -166,8 +158,25 @@ class GradSample(Sample):
         return weights
 
     def sample(self):
+        self.calc_sample_weights()
         return torch.multinomial(self._weights_flat, self.num_samples,
                                  replacement=True)
+
+    def calc_sample_weights(self):
+        """Calculates sampling weights for patches.
+
+        Suppose the sampling probability of a patch depends on gradients along
+        some of the axes, e.g., p(gx, gy). Further suppose the gradients are
+        independent from each other; therefore, p(gx, gy) = p(gx) p(gy). The
+        probabilty along an axis, e.g., p(gz), should be normalized across all
+        patches.
+
+        If :attr:`weights_op` is OR, use fuzzy OR to combine p(gx) and p(gy)
+        instead of p(gx) p(gy) (fuzzy AND).
+
+        """
+        if not hasattr(self, '_weights_flat'):
+            self._calc_sample_weights()
 
     def save_figures(self, dirname):
         """Saves figures of intermediate results.
@@ -176,6 +185,7 @@ class GradSample(Sample):
             dirname (str): The directory to save these figures.
 
         """
+        self.calc_sample_weights()
         Path(dirname).mkdir(exist_ok=True, parents=True)
         self._save_fig(dirname, self.patches.image, 'image', cmap='gray')
         self._save_fig(dirname, self._denoise_kernel, 'denosie_kernel')
@@ -186,7 +196,10 @@ class GradSample(Sample):
         self._save_fig(dirname, self._weights, 'weights', cmap='jet')
 
     def _save_fig(self, dirname, image, prefix, cmap='jet'):
-        image = (image.squeeze() - image.min()) / (image.max() - image.min())
+        while image.ndim > 3:
+            image = image.squeeze(0)
+        if image.max() > image.min():
+            image = (image - image.min()) / (image.max() - image.min())
         views = {'view-yz': image[image.shape[0]//2, :, :].cpu().numpy(),
                  'view-xz': image[:, image.shape[1]//2, :].cpu().numpy(),
                  'view-xy': image[:, :, image.shape[2]//2].cpu().numpy()}
@@ -195,15 +208,64 @@ class GradSample(Sample):
             plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
 
 
-"""
+class AvgGradSample(GradSample):
+    """Uses a kernel to do weighted average within sliding windows.
+
+    This class is use to aggregate all gradients within the patch size to the
+    patch center, so the patch center can represent the amount of all gradients
+    within each patch.
+
+    """
+    def __init__(self, patches, num_sel, sigma=1, voxel_size=(1, 1, 1),
+                 use_grads=[True, False, True], weights_op=ProbOp.AND,
+                 avg_kernel=None):
+        super().__init__(patches, num_sel, sigma=sigma, voxel_size=voxel_size,
+                         use_grads=use_grads, weights_op=weights_op)
+        self.avg_kernel = self._init_avg_kernel(avg_kernel)
+
+    def _init_avg_kernel(self, kernel):
+        if kernel is None:
+            kernel_size = self.patches.patch_size
+            kernel = np.ones(kernel_size, dtype=np.float32)
+            kernel = kernel / np.sum(kernel)
+        elif kernel.ndim <= 3:
+            extra_dims = len(self.patches.patch_size) - kernel.ndim
+            kernel = kernel[(..., ) + (None, ) * extra_dims]
+            kernel = padcrop3d(kernel, self.patches.patch_size, False)
+        elif kernel.ndim <= 5:
+            kernel = kernel[-3:]
+            kernel = padcrop3d(kernel, self.patches.patch_size, False)
+        kernel = torch.tensor(kernel, dtype=self.patches.image.dtype,
+                              device=self.patches.image.device)
+        kernel = kernel[None, None, ...]
+        return kernel
+
+    def _calc_image_grads(self):
+        """Calculates the image gradient magnitude.
+
+        In addtion to :meth:`GradSample._calc_image_grad`, this method use an
+        averaging kernel to aggregate the gradients to the patch center.
+
+        """
+        super()._calc_image_grads()
+        self._avg_gradients = [self._calc_avg_grad(g) for g in self._gradients]
+        return self._avg_gradients
 
     def _calc_avg_grad(self, grad):
-        avg_kernel = torch.ones(self.patch_size, dtype=grad.dtype,
-                                device=grad.device)[None, None, ...]
-        avg_kernel = avg_kernel / torch.sum(avg_kernel)
-        padding = [ps // 2 for ps in self.patch_size]
-        avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
+        starts = [(s - 1) // 2 for s in self.patches.patch_size]
+        stops = [s - 1 - ss for s, ss in zip(self.patches.patch_size, starts)]
+        padding = np.array([starts[::-1], stops[::-1]]).T.flatten().tolist()
+        padded_grad = torch.nn.ReplicationPad3d(padding)(grad[None, None, ...])
+        avg_grad = F.conv3d(padded_grad, self.avg_kernel).squeeze(0).squeeze(0)
         return avg_grad
+
+    def save_figures(self, dirname):
+        super().save_figures(dirname)
+        self._save_fig(dirname, self.avg_kernel, 'avg-kernel', cmap='jet')
+        for i, g in enumerate(self._avg_gradients):
+            self._save_fig(dirname, g, 'avg-gradiant-%d' % i, cmap='jet')
+
+"""
 
     prod_w = prod_w[None, None, ...]
     kernel_size = [2 * s for s in self.weight_stride]
