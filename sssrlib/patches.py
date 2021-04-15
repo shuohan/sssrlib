@@ -6,7 +6,6 @@ TODO:
 """
 import numpy as np
 import torch
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from collections import namedtuple
 from collections.abc import Iterable
