@@ -52,6 +52,22 @@ def test_sample():
     os.system('rm -rf %s' % dirname)
     sample.save_figures(dirname)
 
+    image = zoom(image, (1, 1, 0.4))
+    patches = Patches((32, 32, 1), image, named=False)
+
+    dirname = 'results_sample/x'
+    os.system('rm -rf %s' % dirname)
+    sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5),
+                        use_grads=[True, False, False])
+    sample.save_figures(dirname)
+    indices = sample.sample()
+
+    for ind in indices:
+        patch = patches[ind]
+        fig = plt.figure()
+        plt.imshow(patch.squeeze())
+        fig.savefig(Path(dirname, '%s.png' % ind))
+
     print('successful')
 
 if __name__ == '__main__':

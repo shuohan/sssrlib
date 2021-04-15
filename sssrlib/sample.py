@@ -161,7 +161,7 @@ class GradSample(Sample):
         if self.weights_op is ProbOp.AND:
             weights = torch.prod(torch.stack(weights), axis=0)
         elif self.weights_op is ProbOp.OR:
-            rev_weights = [1 - w for w in weights]
+            rev_weights = [1.0 - w for w in weights]
             weights = 1.0 - torch.prod(torch.stack(rev_weights), axis=0)
         return weights
 
