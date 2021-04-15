@@ -19,7 +19,7 @@ class Sample:
         self.patches = patches
         self.num_samples = num_samples
 
-    def sample(self):
+    def sample_indices(self):
         """Returns patch indices to sample."""
         raise NotImplementedError
 
@@ -28,7 +28,7 @@ class UniformSample(Sample):
     """Samples patches uniformly.
 
     """
-    def sample(self):
+    def sample_indices(self):
         return random.choices(range(len(self.patches)), k=self.num_samples)
 
 
@@ -157,7 +157,7 @@ class GradSample(Sample):
             weights = 1.0 - torch.prod(torch.stack(rev_weights), axis=0)
         return weights
 
-    def sample(self):
+    def sample_indices(self):
         self.calc_sample_weights()
         return torch.multinomial(self._weights_flat, self.num_samples,
                                  replacement=True)
@@ -265,17 +265,55 @@ class AvgGradSample(GradSample):
         for i, g in enumerate(self._avg_gradients):
             self._save_fig(dirname, g, 'avg-gradiant-%d' % i, cmap='jet')
 
-"""
 
-    prod_w = prod_w[None, None, ...]
-    kernel_size = [2 * s for s in self.weight_stride]
-    stride = self.weight_stride
-    pool_w, indices = F.max_pool3d(prod_w, kernel_size=kernel_size,
-                                   stride=stride, return_indices=True)
-    unpool_w = F.max_unpool3d(pool_w, indices, kernel_size, stride=stride,
-                              output_size=prod_w.shape)
+class Suppress(Sample):
+    """Suppresses non-maxima locally of sampling weights.
 
-    self._grad_w = grad_w
-    self._prod_w = prod_w
-    self._unpool_w = unpool_w
-"""
+    """
+    def __init__(self, sample, weights_stride=None):
+        self.sample = sample
+        if weights_stride is None:
+            patch_size = self.sample.patches.patch_size
+            self.weights_stride = [(s + 1) // s for s in patch_size]
+        else:
+            self.weights_stride = weights_stride
+
+    def calc_sample_weights(self):
+        self.sample.calc_sample_weights()
+        if not hasattr(self, '_sup_weights'):
+            self._suppress_weights()
+        self._sup_weights_flat = self._sup_weights.flatten()
+        self._weights_mapping = 
+
+    def _suppress_weights(self):
+        """Suppresses non-maxima of weights locally.
+
+        Args:
+            weights (torch.Tensor): The weights to suppress.
+            weights_stride (iterable[ind]): The distances between two adjacent
+                windows.
+
+        Returns:
+            torch.Tensor: The suppressed weights.
+
+        """
+        weights = self.sample._weights[None, None, ...]
+        kernel_size = [2 * s for s in self.weights_stride]
+        pooled, indices = F.max_pool3d(weights, kernel_size=kernel_size,
+                                       stride=self.weights_stride,
+                                       return_indices=True)
+        unpooled = F.max_unpool3d(pooled, indices, kernel_size,
+                                  stride=self.weights_stride,
+                                  output_size=weights.shape)
+        self._sup_weights = unpooled.squeeze()
+
+    def sample_indices(self):
+        self.calc_sample_weights()
+        return torch.multinomial(self._sup_weights_flat,
+                                 self.sample.num_samples,
+                                 replacement=True)
+
+    def save_figures(self, dirname):
+        self.calc_sample_weights()
+        self.sample.save_figures(dirname)
+        self.sample._save_fig(dirname, self._sup_weights, 'sup-weights')
