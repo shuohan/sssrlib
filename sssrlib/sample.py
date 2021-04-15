@@ -270,20 +270,18 @@ class Suppress(Sample):
     """Suppresses non-maxima locally of sampling weights.
 
     """
-    def __init__(self, sample, weights_stride=None):
+    def __init__(self, sample, kernel_size=(32, 32, 1), stride=(16, 16, 1)):
         self.sample = sample
-        if weights_stride is None:
-            patch_size = self.sample.patches.patch_size
-            self.weights_stride = [(s + 1) // s for s in patch_size]
-        else:
-            self.weights_stride = weights_stride
+        self.stride = stride
+        self.kernel_size = kernel_size
 
     def calc_sample_weights(self):
         self.sample.calc_sample_weights()
         if not hasattr(self, '_sup_weights'):
             self._suppress_weights()
-        self._sup_weights_flat = self._sup_weights.flatten()
-        self._weights_mapping = 
+        sup_weights_flat = self._sup_weights.flatten()
+        self._weights_mapping = torch.where(sup_weights_flat > 0)[0]
+        self._sup_weights_flat = sup_weights_flat[self._weights_mapping]
 
     def _suppress_weights(self):
         """Suppresses non-maxima of weights locally.
@@ -298,22 +296,25 @@ class Suppress(Sample):
 
         """
         weights = self.sample._weights[None, None, ...]
-        kernel_size = [2 * s for s in self.weights_stride]
-        pooled, indices = F.max_pool3d(weights, kernel_size=kernel_size,
-                                       stride=self.weights_stride,
-                                       return_indices=True)
-        unpooled = F.max_unpool3d(pooled, indices, kernel_size,
-                                  stride=self.weights_stride,
-                                  output_size=weights.shape)
+        pooled, indices = F.max_pool3d(weights, kernel_size=self.kernel_size,
+                                       stride=self.stride, return_indices=True)
+        self._pooled_weights = pooled.squeeze()
+        unpooled = F.max_unpool3d(pooled, indices, self.kernel_size,
+                                  stride=self.stride, output_size=weights.shape)
+        # assert torch.equal(weights.flatten()[indices],
+        #                    unpooled.flatten()[indices])
         self._sup_weights = unpooled.squeeze()
 
     def sample_indices(self):
         self.calc_sample_weights()
-        return torch.multinomial(self._sup_weights_flat,
-                                 self.sample.num_samples,
-                                 replacement=True)
+        indices = torch.multinomial(self._sup_weights_flat,
+                                    self.sample.num_samples,
+                                    replacement=True)
+        indices = self._weights_mapping[indices]
+        return indices
 
     def save_figures(self, dirname):
         self.calc_sample_weights()
         self.sample.save_figures(dirname)
+        self.sample._save_fig(dirname, self._pooled_weights, 'pooled-weights')
         self.sample._save_fig(dirname, self._sup_weights, 'sup-weights')
