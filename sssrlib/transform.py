@@ -1,5 +1,67 @@
+import re
 import numpy as np
 import torch
+from enum import Enum
+
+
+class TransformType(str, Enum):
+    """Enum of the transforms."""
+    FLIP = 'flip'
+    ROT90 = 'rot90'
+
+
+def create_transform_from_desc(trans_args):
+    """Creates a transform from a string description.
+
+    Multiple transforms are joined with "_", for example, "rot901_flip01". For
+    rot90, the last digit is k, for example, "rot902" is rot90 with k = 2. For
+    flip, the digits are flipping axes, for example, "flip02" is flip with
+    axis = (0, 2).
+
+    Args:
+        trans_args (str): The transform description.
+
+    Returns:
+        Transform: The created transform.
+
+    """
+    trans_args = trans_args.split('_')
+    results = list()
+    for args in trans_args:
+        if args.startswith('rot90'):
+            trans = ('rot90', {'k': int(re.sub('^rot90', '', args))})
+        elif args.startswith('flip'):
+            axes = tuple(int(d) for d in re.sub('^flip', '', args))
+            trans = ('flip', {'axis': axes})
+        results.append(trans)
+    return create_transform(*results)
+
+
+def create_transform(*trans_args):
+    """Creates a transform.
+
+    Args:
+        trans_args (iterable): Describes the transform. For single transform,
+            use ('rot90', {'k': 1}). For muliple transforms (compose), use
+            ('rot90', {'k': 2}), ('flip', {'axis': (1, )}).
+
+    Returns:
+        Transform: The created transform.
+
+    """
+    results = list()
+    for args in trans_args:
+        trans_type = TransformType(args[0])
+        if trans_type is TransformType.FLIP:
+            trans = Flip(**args[1])
+        elif trans_type is TransformType.ROT90:
+            trans = Rot90(**args[1])
+        results.append(trans)
+
+    if len(results) > 1:
+        return Compose(*results)
+    else:
+        return results[0]
 
 
 class Transform:
@@ -25,17 +87,6 @@ class Transform:
     def get_name(self):
         """Returns the name of the transform."""
         raise NotImplementedError
-
-
-class Identity(Transform):
-    """Does not change the input patch.
-
-    """
-    def transform(self, patch):
-        return patch
-
-    def __str__(self):
-        return 'identity transform'
 
 
 class Rot90(Transform):

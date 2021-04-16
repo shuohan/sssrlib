@@ -11,6 +11,7 @@ from pathlib import Path
 from improc3d import padcrop3d
 from torch.utils.data._utils.collate import default_collate
 
+from .transform import create_transform_from_desc
 from .patches import PatchesCollection
 
 
@@ -108,7 +109,7 @@ class GradSample(Sample):
 
     """
     def __init__(self, patches, sigma=1, use_grads=[True, False, True],
-                 weights_op=ProbOp.AND):
+                 weights_op=ProbOp.OR):
         super().__init__(patches)
         self.sigma = sigma
         self.use_grads = use_grads
@@ -267,7 +268,7 @@ class AvgGradSample(GradSample):
 
     """
     def __init__(self, patches, sigma=1, use_grads=[True, False, True],
-                 weights_op=ProbOp.AND, avg_kernel=None):
+                 weights_op=ProbOp.OR, avg_kernel=None):
         super().__init__(patches, sigma=sigma, use_grads=use_grads,
                          weights_op=weights_op)
         self.avg_kernel = self._init_avg_kernel(avg_kernel)
