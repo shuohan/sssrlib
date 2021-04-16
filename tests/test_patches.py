@@ -44,7 +44,7 @@ def test_patches():
     patches_2d = Patches(ps2d, image, squeeze=True, expand_channel_dim=True, named=True)
     patch = patches_2d[13140]
     assert isinstance(patch, NamedData)
-    assert patch.name == 'ind-x02-y16-z072'
+    assert patch.name == 'x02-y16-z072'
     assert np.array_equal(patch.data, image[2:2+ps2d[0], 16:16+ps2d[1], 72][None, ...])
     assert len(patches_2d) == 41 * 46 * 121
 
@@ -79,7 +79,7 @@ def test_patches():
     patch_data = torch.rot90(torch.flip(patch.data, [0]), 3)[None, ...]
     ref_patch = image_trans[46:46+64, 22:22+64, 0]
     ref_patch = torch.tensor(ref_patch, dtype=torch.float32).cuda()
-    assert patch.name == 'ind-x46-y22-z00_rot90-flip'
+    assert patch.name == 'x46-y22-z00_rot90-flip'
     assert len(patches_2d) == 58 * 37 * 90
     assert torch.allclose(patch_data, ref_patch)
 

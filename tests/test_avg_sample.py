@@ -18,14 +18,14 @@ def test_avg_sample():
 
     dirname = 'results_avg_sample/avg'
     os.system('rm -rf %s' % dirname)
-    sample = AvgGradSample(patches, 3, voxel_size=(1, 1, 2.5))
+    sample = AvgGradSample(patches, voxel_size=(1, 1, 2.5))
     sample.save_figures(dirname)
-    indices = sample.sample()
-    for ind in indices:
-        patch = patches[ind]
+    indices = sample.sample_indices(3)
+    batch = sample.get_patches(indices)
+    for i in range(batch.shape[0]):
         fig = plt.figure()
-        plt.imshow(patch.squeeze())
-        fig.savefig(Path(dirname, '%s.png' % ind))
+        plt.imshow(batch[i, ...].squeeze())
+        fig.savefig(Path(dirname, '%s.png' % i))
 
     shape = patches.patch_size
     avg_kernel = np.zeros(shape)

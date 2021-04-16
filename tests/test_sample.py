@@ -17,15 +17,15 @@ def test_sample():
 
     dirname = 'results_sample/and'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5))
+    sample = GradSample(patches, voxel_size=(1, 1, 2.5))
     sample.save_figures(dirname)
-    indices = sample.sample()
+    indices = sample.sample_indices(3)
+    batch = sample.get_patches(indices)
 
-    for ind in indices:
-        patch = patches[ind]
+    for i in range(batch.shape[0]):
         fig = plt.figure()
-        plt.imshow(patch.squeeze())
-        fig.savefig(Path(dirname, '%s.png' % ind))
+        plt.imshow(batch[i, ...].squeeze())
+        fig.savefig(Path(dirname, '%s.png' % i))
 
     assert len(sample._weights_flat) == len(patches)
     grads = [sample._gradients[0], sample._gradients[2]]
@@ -57,16 +57,15 @@ def test_sample():
 
     dirname = 'results_sample/x'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5),
+    sample = GradSample(patches, voxel_size=(1, 1, 2.5),
                         use_grads=[True, False, False])
     sample.save_figures(dirname)
-    indices = sample.sample()
+    indices = sample.sample_indices(3)
 
-    for ind in indices:
-        patch = patches[ind]
+    for i in range(batch.shape[0]):
         fig = plt.figure()
-        plt.imshow(patch.squeeze())
-        fig.savefig(Path(dirname, '%s.png' % ind))
+        plt.imshow(batch[i, ...].squeeze())
+        fig.savefig(Path(dirname, '%s.png' % i))
 
     print('successful')
 
