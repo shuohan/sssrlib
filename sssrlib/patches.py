@@ -212,7 +212,7 @@ class Patches(AbstractPatches):
             nx = len(str(self._xnum))
             ny = len(str(self._ynum))
             nz = len(str(self._znum))
-            self._name_pattern = 'ind-x%%0%dd-y%%0%dd-z%%0%dd'
+            self._name_pattern = 'x%%0%dd-y%%0%dd-z%%0%dd'
             self._name_pattern = self._name_pattern % (nx, ny, nz)
         return self._name_pattern % ind
 
@@ -226,6 +226,30 @@ class TransformedPatches(AbstractPatches):
     def __init__(self, patches, transform):
         self.patches = patches
         self.transform = transform
+
+    @property
+    def named(self):
+        return self.patches.named
+
+    @property
+    def patch_size(self):
+        return self.patches.patch_size
+
+    @property
+    def image(self):
+        return self.patches.image
+
+    @property
+    def xnum(self):
+        return self.patches.xnum
+
+    @property
+    def ynum(self):
+        return self.patches.ynum
+
+    @property
+    def znum(self):
+        return self.patches.znum
 
     def __getitem__(self, ind):
         ind = self.patches.unravel_index(ind)
@@ -252,206 +276,48 @@ class TransformedPatches(AbstractPatches):
         return self
 
 
-class PatchesOr(AbstractPatches):
-    """Selects one of :class:`AbstractPatches` instance to output patches.
+class PatchesCollection(AbstractPatches):
+    """A collection of :class:`AbstractPatches`
 
     Note:
         This class can be used to select from different image orientations,
         for example, x-z or y-z patches, and transforms.
 
-    Attributes:
-        patches (list[AbstractPatches]): The :class:`AbstractPatches` instances
-            to select from.
+    Args:
+        patches (AbstractPatches): An :class:`AbstractPatches` instance.
 
     """
     def __init__(self, *patches):
-        self.patches = list(patches)
-        assert len(np.unique([p.named for p in self.patches])) == 1
-        self.named = self.patches[0].named
-        self._nums = [len(p) for p in self.patches]
-        self._cumsum = np.cumsum(self._nums)
+        self._collection = list(patches)
+        assert len(np.unique([p.named for p in self._collection])) == 1
+        self.named = self._collection[0].named
 
     def __len__(self):
-        return np.sum(self._nums)
+        return np.sum([len(p) for p in self._collection])
 
     def __str__(self):
         message = ['Patches #%d\n%s' % (i,  p.__str__())
-                   for i, p in enumerate(self.patches)]
+                   for i, p in enumerate(self._collection)]
         message = '\n----------\n'.join(message)
         return message
 
     def __getitem__(self, ind):
-        pind = np.digitize(ind, self._cumsum)
-        ind = ind - self._cumsum[pind - 1] if pind > 0 else ind
-        patch = self.patches[pind][ind]
+        """Retunrs a patch.
+
+        Args:
+            ind (tuple[ind]): The first index is for the patches instances, the
+                second index is for a patch given the patches instance.
+
+        """
+        patch = self._collection[ind[0]][ind[1]]
 
         if self.named:
-            names = patch.name.split('-')
-            pattern = 'p%%0%dd' % len(str(len(self.patches)))
-            names.insert(1, pattern % pind)
-            patch = NamedData('-'.join(names), patch.data)
+            num_digits = len(str(len(self._collection)))
+            pind = ('p%%0%dd' % num_digits) % ind[0]
+            name = '_'.join([pind, patch.name])
+            patch = NamedData(name, patch.data)
 
         return patch
 
-    def get_sample_weights(self):
-        weights = [p.get_sample_weights() for p in self.patches]
-        self._cumsum = np.cumsum([len(w) for w in weights])
-        weights = torch.cat(weights)
-        return weights
-
-    def register(self, patches):
-        raise NotImplementedError
-
-
-class PatchesAnd(AbstractPatches):
-    """Returns a patch from each of :class:`Patches` instances.
-
-    Note:
-        This class is mainly used to yield training pairs. The number of patches
-        for each :class:`Patches` instance should be the same.
-
-    Attributes:
-        patches (list[Patches]): The :class:`Patches` instances to output
-            patches from.
-
-    """
-    def __init__(self, *patches):
-        self.patches = list(patches)
-
-    def __len__(self):
-        return len(self.patches[0])
-
-    def __getitems__(self, ind):
-        return tuple(p[ind] for p in self.patches)
-
-
-################# 
-
-    def get_sample_weights(self):
-        """Returns the sampling weights of each patch.
-
-        """
-        if self._weight_map is None:
-            self._calc_weight_map()
-
-        weights = self._weight_map.repeat(len(self.transforms))
-        weights = weights / torch.sum(weights)
-
-        if self.compress:
-            self._ind_mapping = torch.where(weights > 0)[0]
-            self._ind_mapping = self._ind_mapping.cpu().numpy().tolist()
-            weights = weights[self._ind_mapping]
-
-        if self.weight_dir is not None:
-            self.weight_dir.mkdir(exist_ok=True, parents=True)
-            for i, w in enumerate(self._grad_w):
-                self._save_figures(w, 'grad_weights%d' % i, cmap='jet')
-            self._save_figures(self._prod_w, 'prod_weights', cmap='jet')
-            self._save_figures(self._unpool_w, 'pool_weights', cmap='jet')
-
-        return weights
-
-    def _calc_weight_map(self):
-        grads = self._calc_image_grads()
-        shifts = [self._calc_shift(self.patch_size[0], self._xnum),
-                  self._calc_shift(self.patch_size[1], self._ynum),
-                  self._calc_shift(self.patch_size[2], self._znum)]
-        grad_w = [grad[tuple(shifts)] for grad in grads]
-        grad_w = [w for w, ug in zip(grad_w, self.use_grads) if ug]
-        grad_w = [w / torch.sum(w) for w in grad_w]
-
-        num_grads = len(grad_w)
-        prod_w = torch.prod(torch.stack(grad_w), axis=0) ** (1 / num_grads)
-        prod_w = prod_w[None, None, ...]
-
-        kernel_size = [2 * s for s in self.weight_stride]
-        stride = self.weight_stride
-        pool_w, indices = F.max_pool3d(prod_w, kernel_size=kernel_size,
-                                       stride=stride, return_indices=True)
-        unpool_w = F.max_unpool3d(pool_w, indices, kernel_size, stride=stride,
-                                  output_size=prod_w.shape)
-
-        self._grad_w = grad_w
-        self._prod_w = prod_w
-        self._unpool_w = unpool_w
-        self._weight_map = unpool_w.flatten()
-
-
-    def _calc_avg_grad(self, grad):
-        avg_kernel = torch.ones(self.patch_size, dtype=grad.dtype,
-                                device=grad.device)[None, None, ...]
-        avg_kernel = avg_kernel / torch.sum(avg_kernel)
-        padding = [ps // 2 for ps in self.patch_size]
-        avg_grad = F.conv3d(grad, avg_kernel, padding=padding)
-        return avg_grad
-
-    def _calc_shift(self, patch_size, image_size):
-        left_shift = (patch_size - 1) // 2
-        right_shift = image_size + left_shift
-        shift = slice(left_shift, right_shift)
-        return shift
-
-    def get_dataloader(self, batch_size, weighted=True, num_workers=0):
-        """Returns the torch.utils.data.DataLoader of ``self``.
-
-        Warning:
-            Only support 2D patches with size [x, y, 1] for now.
-
-        Args:
-            batch_size (int): The number of samples per mini-batch.
-            weighted (bool): Weight sampling with image gradients.
-
-        Returns:
-            torch.utils.data.DataLoader: The data loader of the :class:`Patches`
-                instance itself.
-
-        """
-        if weighted:
-            weights = self.get_sample_weights()
-            sampler = WeightedRandomSampler(weights, batch_size)
-        else:
-            sampler = RandomSampler(self, replacement=True,
-                                    num_samples=batch_size)
-        dataloader = DataLoader(self, batch_size=batch_size, sampler=sampler,
-                                num_workers=num_workers)
-        return dataloader
-
-    def get_sample_weights(self):
-        """Returns the sampling weights of each patch."""
-        raise NotImplementedError
-
-
-"""
-'Deniose sigma: {}'.format(self.sigma),
-'Voxel size: {}'.format(self.voxel_size),
-'Weight stride: {}'.format(self.weight_stride),
-'Use gradients: {}'.format(self.use_grads),
-
-        self._ind_mapping = None
-        self._weight_map = None
-        self._grad_w = None
-        self._prod_w = None
-        self._unpool_w = None
-self.compress = compress
-self.use_grads = use_grads
-self.weight_dir = weight_dir
-self.voxel_size = voxel_size
-self.sigma = sigma
-self.avg_grad = avg_grad
-self.weight_stride = weight_stride
-sigma=0, voxel_size=(1, 1, 1),
-                 weight_stride=(1, 1, 1), weight_dir=None, avg_grad=False,
-                 use_grads=[True, True, True], compress=False,
-
-        voxel_size (tuple[float]): The size of the voxel after permutation.
-        sigma (float): The sigma of Gaussian filter to denoise before
-            calculating the probability map. Do not denoise if 0.
-        avg_grad (bool): Average the image gradients when calculating sampling
-            weights.
-        weight_stride(tuple[int]): The strides between sampling weights after
-            permutation.
-        weight_dir (str): Save figures of weights into this directory if not
-            ``None``.
-        compress (bool): Compress the number of available patches according to
-            non-zero sampling weights.
-"""
+    def append(self, patches):
+        self._collection.append(patches)

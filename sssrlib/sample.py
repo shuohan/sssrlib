@@ -9,27 +9,89 @@ import torch.nn.functional as F
 from enum import Enum
 from pathlib import Path
 from improc3d import padcrop3d
+from torch.utils.data._utils.collate import default_collate
+
+from .patches import PatchesCollection
+
+
+"""
+'Deniose sigma: {}'.format(self.sigma),
+'Voxel size: {}'.format(self.voxel_size),
+'Weight stride: {}'.format(self.weight_stride),
+'Use gradients: {}'.format(self.use_grads),
+
+        voxel_size (tuple[float]): The size of the voxel after permutation.
+        sigma (float): The sigma of Gaussian filter to denoise before
+            calculating the probability map. Do not denoise if 0.
+        stride(tuple[int]): The strides between sampling weights after
+            permutation.
+
+"""
 
 
 class Sample:
     """Generates indices to sample patches.
 
     """
-    def __init__(self, patches, num_samples):
+    def __init__(self, patches):
         self.patches = patches
-        self.num_samples = num_samples
 
-    def sample_indices(self):
-        """Returns patch indices to sample."""
+    def sample_indices(self, num_samples):
+        """Returns patch indices to sample.
+
+        Args:
+            num_samples (int): The number of patches to sample.
+
+        Returns: 
+            list[int]: The sampled patch indices.
+
+        """
         raise NotImplementedError
+
+    def get_patches(self, indices):
+        """Returns patches with indices.
+
+        Args:
+            indices (list): The patch indices.
+
+        Returns:
+            torch.Tensor or sssrlib.patches.NamedData: The selected patches.
+
+        """
+        result = list()
+        for ind in indices:
+            result.append(self.patches[ind])
+        result = default_collate(result)
+        return result
+
+    def save_figures(self, dirname):
+        """Saves figures of intermediate results.
+
+        Args:
+            dirname (str): The directory to save these figures.
+
+        """
+        pass
+
+    def _save_fig(self, dirname, image, prefix, cmap='jet'):
+        while image.ndim > 3:
+            image = image.squeeze(0)
+        if image.max() > image.min():
+            image = (image - image.min()) / (image.max() - image.min())
+        views = {'view-yz': image[image.shape[0]//2, :, :].cpu().numpy(),
+                 'view-xz': image[:, image.shape[1]//2, :].cpu().numpy(),
+                 'view-xy': image[:, :, image.shape[2]//2].cpu().numpy()}
+        for k, v in views.items():
+            filename = Path(dirname, '%s_%s.png' % (prefix, k))
+            plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
 
 
 class UniformSample(Sample):
     """Samples patches uniformly.
 
     """
-    def sample_indices(self):
-        return random.choices(range(len(self.patches)), k=self.num_samples)
+    def sample_indices(self, num_samples):
+        return random.choices(range(len(self.patches)), k=num_samples)
 
 
 class ProbOp(str, Enum):
@@ -44,10 +106,10 @@ class GradSample(Sample):
     """Samples patches weighted by image gradients.
 
     """
-    def __init__(self, patches, num_sel, sigma=1, voxel_size=(1, 1, 1),
+    def __init__(self, patches, sigma=1, voxel_size=(1, 1, 1),
                  use_grads=[True, False, True], weights_op=ProbOp.AND):
-        super().__init__(patches, num_sel)
-        self.sigma = 3
+        super().__init__(patches)
+        self.sigma = sigma
         self.voxel_size = np.array(voxel_size) / min(voxel_size)
         self.use_grads = use_grads
         self.weights_op = ProbOp(weights_op)
@@ -157,10 +219,11 @@ class GradSample(Sample):
             weights = 1.0 - torch.prod(torch.stack(rev_weights), axis=0)
         return weights
 
-    def sample_indices(self):
+    def sample_indices(self, num_samples):
         self.calc_sample_weights()
-        return torch.multinomial(self._weights_flat, self.num_samples,
-                                 replacement=True)
+        indices = torch.multinomial(self._weights_flat, num_samples,
+                                    replacement=True)
+        return indices.cpu().tolist()
 
     def calc_sample_weights(self):
         """Calculates sampling weights for patches.
@@ -179,12 +242,6 @@ class GradSample(Sample):
             self._calc_sample_weights()
 
     def save_figures(self, dirname):
-        """Saves figures of intermediate results.
-
-        Args:
-            dirname (str): The directory to save these figures.
-
-        """
         self.calc_sample_weights()
         Path(dirname).mkdir(exist_ok=True, parents=True)
         self._save_fig(dirname, self.patches.image, 'image', cmap='gray')
@@ -195,18 +252,6 @@ class GradSample(Sample):
             self._save_fig(dirname, g, 'gradiant-%d' % i, cmap='jet')
         self._save_fig(dirname, self._weights, 'weights', cmap='jet')
 
-    def _save_fig(self, dirname, image, prefix, cmap='jet'):
-        while image.ndim > 3:
-            image = image.squeeze(0)
-        if image.max() > image.min():
-            image = (image - image.min()) / (image.max() - image.min())
-        views = {'view-yz': image[image.shape[0]//2, :, :].cpu().numpy(),
-                 'view-xz': image[:, image.shape[1]//2, :].cpu().numpy(),
-                 'view-xy': image[:, :, image.shape[2]//2].cpu().numpy()}
-        for k, v in views.items():
-            filename = Path(dirname, '%s_%s.png' % (prefix, k))
-            plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
-
 
 class AvgGradSample(GradSample):
     """Uses a kernel to do weighted average within sliding windows.
@@ -216,10 +261,10 @@ class AvgGradSample(GradSample):
     within each patch.
 
     """
-    def __init__(self, patches, num_sel, sigma=1, voxel_size=(1, 1, 1),
+    def __init__(self, patches, sigma=1, voxel_size=(1, 1, 1),
                  use_grads=[True, False, True], weights_op=ProbOp.AND,
                  avg_kernel=None):
-        super().__init__(patches, num_sel, sigma=sigma, voxel_size=voxel_size,
+        super().__init__(patches, sigma=sigma, voxel_size=voxel_size,
                          use_grads=use_grads, weights_op=weights_op)
         self.avg_kernel = self._init_avg_kernel(avg_kernel)
 
@@ -266,7 +311,7 @@ class AvgGradSample(GradSample):
             self._save_fig(dirname, g, 'avg-gradiant-%d' % i, cmap='jet')
 
 
-class Suppress(Sample):
+class SuppressWeights(Sample):
     """Suppresses non-maxima locally of sampling weights.
 
     """
@@ -274,6 +319,10 @@ class Suppress(Sample):
         self.sample = sample
         self.stride = stride
         self.kernel_size = kernel_size
+
+    @property
+    def patches(self):
+        return self.sample.patches
 
     def calc_sample_weights(self):
         self.sample.calc_sample_weights()
@@ -305,16 +354,50 @@ class Suppress(Sample):
         #                    unpooled.flatten()[indices])
         self._sup_weights = unpooled.squeeze()
 
-    def sample_indices(self):
+    def sample_indices(self, num_samples):
         self.calc_sample_weights()
-        indices = torch.multinomial(self._sup_weights_flat,
-                                    self.sample.num_samples,
+        indices = torch.multinomial(self._sup_weights_flat, num_samples,
                                     replacement=True)
         indices = self._weights_mapping[indices]
-        return indices
+        return indices.cpu().tolist()
 
     def save_figures(self, dirname):
         self.calc_sample_weights()
         self.sample.save_figures(dirname)
         self.sample._save_fig(dirname, self._pooled_weights, 'pooled-weights')
         self.sample._save_fig(dirname, self._sup_weights, 'sup-weights')
+
+
+class SampleCollection(Sample):
+    """Samples patches from :class:`sssrlib.patches.PatchesCollection.
+
+    """
+    def __init__(self, *sample):
+        self._sample_collection = list(sample)
+        patches = [s.patches for s in self._sample_collection]
+        self._patches_collection = PatchesCollection(*patches)
+
+    @property
+    def patches(self):
+        return self._patches_collection
+
+    def sample_indices(self, num_samples):
+        num_patches = len(self._sample_collection)
+        patches_ind = random.choices(range(num_patches), k=num_samples)
+        counts = np.bincount(patches_ind, minlength=num_patches)
+        results = list()
+        for i, num in enumerate(counts):
+            if num == 0:
+                continue
+            patches = self._sample_collection[i]
+            indices = patches.sample_indices(num)
+            indices = list(zip([i] * num, indices))
+            results += indices
+        return results
+
+    def save_figures(self, dirname):
+        num_digits = len(str(len(self._sample_collection)))
+        pattern = '%%0%dd' % num_digits
+        for i, sample in enumerate(self._sample_collection):
+            subdir = Path(dirname, pattern % i)
+            sample.save_figures(subdir)

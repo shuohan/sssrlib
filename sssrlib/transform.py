@@ -2,22 +2,6 @@ import numpy as np
 import torch
 
 
-def create_rot_flip():
-    """Create transforms combining :class:`Rot90` and :class:`Flip`.
-
-    Returns:
-        list[Transform]: The created transforms.
-
-    """
-    transforms = list()
-    transforms.append(Identity())
-    transforms.append(Compose(Identity(), Flip()))
-    for k in [1, 2, 3]:
-        transforms.append(Rot90(k=k))
-        transforms.append(Compose(Rot90(k=k), Flip()))
-    return transforms
-
-
 class Transform:
     """Abstract class to transform an image patch.
 
