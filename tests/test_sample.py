@@ -13,11 +13,11 @@ from sssrlib.sample import UniformSample, GradSample
 def test_sample():
     image = np.load('shepp3d.npy')
     image = zoom(image, (1, 1, 0.4))
-    patches = Patches((32, 1, 10), image, named=False)
+    patches = Patches((32, 1, 10), image, voxel_size=(1, 1, 2.5), named=False)
 
     dirname = 'results_sample/and'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches, voxel_size=(1, 1, 2.5))
+    sample = GradSample(patches)
     sample.save_figures(dirname)
     indices = sample.sample_indices(3)
     batch = sample.get_patches(indices)
@@ -47,18 +47,17 @@ def test_sample():
                                                  y + (patches.patch_size[1] - 1)//2,
                                                  z + (patches.patch_size[2] - 1)//2]
 
-    sample = GradSample(patches, 3, voxel_size=(1, 1, 2.5), weights_op='or')
+    sample = GradSample(patches, 3, weights_op='or')
     dirname = 'results_sample/or'
     os.system('rm -rf %s' % dirname)
     sample.save_figures(dirname)
 
     image = zoom(image, (1, 1, 0.4))
-    patches = Patches((32, 32, 1), image, named=False)
+    patches = Patches((32, 32, 1), image, named=False, voxel_size=(1, 1, 2.5))
 
     dirname = 'results_sample/x'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches, voxel_size=(1, 1, 2.5),
-                        use_grads=[True, False, False])
+    sample = GradSample(patches, use_grads=[True, False, False])
     sample.save_figures(dirname)
     indices = sample.sample_indices(3)
 

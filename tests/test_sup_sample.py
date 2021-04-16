@@ -15,11 +15,11 @@ from sssrlib.sample import AvgGradSample, SuppressWeights
 def test_sup_sample():
     image = np.load('shepp3d.npy')
     image = zoom(image, (1, 1, 0.4))
-    patches = Patches((32, 1, 10), image, named=False)
+    patches = Patches((32, 1, 10), image, named=False, voxel_size=(1, 1, 2.5))
 
     dirname = 'results_sup_sample'
     os.system('rm -rf %s' % dirname)
-    sample = AvgGradSample(patches, voxel_size=(1, 1, 2.5))
+    sample = AvgGradSample(patches)
     sample = SuppressWeights(sample, stride=[16, 16, 1], kernel_size=[32, 32, 1])
     sample.save_figures(dirname)
     indices = sample.sample_indices(3)

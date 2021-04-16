@@ -68,6 +68,7 @@ class Patches(AbstractPatches):
             integer, it is assumed to be a 2D patch with the same size along x
             and y axes. To get 1D patches, its last two elements should be 1.
             To get 2D patches, its last one elements should be 1.
+        voxel_size (iterable[float]): The size of the voxel before permutation.
 
     Attributes:
         patch_size (tuple[int]): The parsed patch size.
@@ -78,6 +79,7 @@ class Patches(AbstractPatches):
             permute to the y-axis in the result image.
         z (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the z-axis in the result image.
+        voxel_size (numpy.ndarray): The size of the voxel AFTER permutation.
         patches (Patches): Initialize from another patches.
         named (bool): If ``True``, return the patch index as well.
         squeeze (bool): If ``True``, squeeze sampled patches.
@@ -90,7 +92,7 @@ class Patches(AbstractPatches):
 
     """
     def __init__(self, patch_size, image=None, x=0, y=1, z=2,
-                 patches=None, named=True, squeeze=True,
+                 voxel_size=(1, 1, 1), patches=None, named=True, squeeze=True,
                  expand_channel_dim=True, verbose=False):
         self.patch_size = self._parse_patch_size(patch_size)
         self.named = named
@@ -99,7 +101,7 @@ class Patches(AbstractPatches):
         self.verbose = verbose
 
         if image is not None:
-            self._init_from_image(image, x, y, z)
+            self._init_from_image(image, x, y, z, voxel_size)
         elif patches is not None:
             self._init_from_patches(patches)
         else:
@@ -127,12 +129,17 @@ class Patches(AbstractPatches):
         assert len(patch_size) == 3
         return patch_size
 
-    def _init_from_image(self, image, x=0, y=1, z=2):
-        self.x, self.y, self.z = (x, y, z)
+    def _init_from_image(self, image, x, y, z, voxel_size):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.voxel_size = np.array((voxel_size[x],
+                                    voxel_size[y],
+                                    voxel_size[z]))
         self.image = self._permute_image(image)
 
     def _init_from_patches(self, patches):
-        attrs = ['x', 'y', 'z', 'image']
+        attrs = ['x', 'y', 'z', 'image', 'voxel_size']
         for attr in attrs:
             setattr(self, attr, getattr(patches, attr))
 
@@ -162,6 +169,7 @@ class Patches(AbstractPatches):
         message = ['X axis: %d' % self.x,
                    'Y axis: %d' % self.y,
                    'Z axis: %d' % self.z,
+                   'Voxel size: {}'.format(self.voxel_size),
                    'Patch size: {}'.format(self.patch_size),
                    'Number of patches along X: %d' % self._xnum,
                    'Number of patches along Y: %d' % self._ynum,
@@ -250,6 +258,10 @@ class TransformedPatches(AbstractPatches):
     @property
     def znum(self):
         return self.patches.znum
+
+    @property
+    def voxel_size(self):
+        return self.patches.voxel_size
 
     def __getitem__(self, ind):
         ind = self.patches.unravel_index(ind)

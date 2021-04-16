@@ -16,15 +16,8 @@ from .patches import PatchesCollection
 
 """
 'Deniose sigma: {}'.format(self.sigma),
-'Voxel size: {}'.format(self.voxel_size),
 'Weight stride: {}'.format(self.weight_stride),
 'Use gradients: {}'.format(self.use_grads),
-
-        voxel_size (tuple[float]): The size of the voxel after permutation.
-        sigma (float): The sigma of Gaussian filter to denoise before
-            calculating the probability map. Do not denoise if 0.
-        stride(tuple[int]): The strides between sampling weights after
-            permutation.
 
 """
 
@@ -105,12 +98,19 @@ class ProbOp(str, Enum):
 class GradSample(Sample):
     """Samples patches weighted by image gradients.
 
+    Attributes:
+        sigma (float): The sigma (in mm) of Gaussian filter to denoise before
+            calculating the probability map. Do not denoise if 0.
+        use_grads (iterable[bool]): Whether to use a gradients in the order of
+            x, y, z axes.
+        weights_op (ProbOp): How to combine the probabilties calculated from
+            difrerent gradients.
+
     """
-    def __init__(self, patches, sigma=1, voxel_size=(1, 1, 1),
-                 use_grads=[True, False, True], weights_op=ProbOp.AND):
+    def __init__(self, patches, sigma=1, use_grads=[True, False, True],
+                 weights_op=ProbOp.AND):
         super().__init__(patches)
         self.sigma = sigma
-        self.voxel_size = np.array(voxel_size) / min(voxel_size)
         self.use_grads = use_grads
         self.weights_op = ProbOp(weights_op)
 
@@ -134,9 +134,10 @@ class GradSample(Sample):
                                       padding=padding)
 
         mode = 'trilinear'
-        scale_factor = self.voxel_size.tolist()
+        scale_factor = np.array(self.patches.voxel_size)
+        scale_factor = scale_factor / min(scale_factor)
         self._interpolated = F.interpolate(self._denoised, mode=mode,
-                                           scale_factor=scale_factor)
+                                           scale_factor=scale_factor.tolist())
 
         grads = self._calc_sobel_grads(self._interpolated)
         shape = self.patches.image.shape
@@ -156,7 +157,7 @@ class GradSample(Sample):
         length = 4 * self.sigma * 2 + 1
         coord = np.arange(length) - length // 2
         grid = np.meshgrid(coord, coord, coord, indexing='ij')
-        sigmas = self.sigma / self.voxel_size
+        sigmas = self.sigma / np.array(self.patches.voxel_size)
         kernels = [np.exp(-(g**2) / (2 * s**2)) for g, s in zip(grid, sigmas)]
         kernel = np.prod(kernels, axis=0)
         kernel = kernel / np.sum(kernel)
@@ -260,12 +261,15 @@ class AvgGradSample(GradSample):
     patch center, so the patch center can represent the amount of all gradients
     within each patch.
 
+    Attributes:
+        avg_kernel (numpy.ndarray): The kernel to aggregate gradients to the
+            patch center.
+
     """
-    def __init__(self, patches, sigma=1, voxel_size=(1, 1, 1),
-                 use_grads=[True, False, True], weights_op=ProbOp.AND,
-                 avg_kernel=None):
-        super().__init__(patches, sigma=sigma, voxel_size=voxel_size,
-                         use_grads=use_grads, weights_op=weights_op)
+    def __init__(self, patches, sigma=1, use_grads=[True, False, True],
+                 weights_op=ProbOp.AND, avg_kernel=None):
+        super().__init__(patches, sigma=sigma, use_grads=use_grads,
+                         weights_op=weights_op)
         self.avg_kernel = self._init_avg_kernel(avg_kernel)
 
     def _init_avg_kernel(self, kernel):
@@ -313,6 +317,12 @@ class AvgGradSample(GradSample):
 
 class SuppressWeights(Sample):
     """Suppresses non-maxima locally of sampling weights.
+
+    Attributes:
+        sample (Sample):
+        kernel_size (tuple[int]): The window size to calculate local maxima.
+        stride(tuple[int]): The strides between sampling weights after
+            permutation.
 
     """
     def __init__(self, sample, kernel_size=(32, 32, 1), stride=(16, 16, 1)):
