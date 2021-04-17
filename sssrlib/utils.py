@@ -75,3 +75,22 @@ def calc_avg_kernel(kernel_size):
     kernel = np.ones(kernel_size, dtype=np.float32)
     kernel = kernel / np.sum(kernel)
     return kernel
+
+
+def calc_conv_padding(kernel_shape):
+    """Calculates the padding (left and right) size for conv.
+
+    Args:
+        kernel_shape (iterable[int]): The shape of the conv kernel.
+
+    Returns:
+        tuple[int]: The padding. See ``torch.nn.ReplicationPad3d``.
+
+    """
+    padding = list()
+    for s in kernel_shape:
+        left = (s - 1) // 2
+        right = s - 1 - left
+        padding.insert(0, right)
+        padding.insert(0, left)
+    return tuple(padding)

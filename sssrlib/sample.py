@@ -9,7 +9,7 @@ from torch.utils.data._utils.collate import default_collate
 
 from .transform import create_transform_from_desc
 from .patches import PatchesCollection
-from .utils import save_fig
+from .utils import save_fig, calc_conv_padding
 
 
 class ProbOp(str, Enum):
@@ -124,9 +124,9 @@ class ImageGradients:
     def _denoise_image(self):
         self._denoised = self.patches.image[None, None, ...]
         if self.sigma > 0:
-            padding = [s // 2 for s in self._denoise_kernel.shape[2:]]
-            self._denoised = F.conv3d(self._denoised, self._denoise_kernel,
-                                      padding=padding)
+            padding = calc_conv_padding(self._denoise_kernel.shape[2:])
+            padded = torch.nn.ReplicationPad3d(padding)(self._denoised)
+            self._denoised = F.conv3d(padded, self._denoise_kernel)
 
     def _interpolate_image(self):
         scale_factor = np.array(self.patches.voxel_size)
@@ -151,7 +151,8 @@ class ImageGradients:
         sy = sz.permute([1, 2, 0])
         grads = list()
         for s in (sx, sy, sz):
-            grad = F.conv3d(image, s[None, None, ...], padding=1)
+            padded = torch.nn.ReplicationPad3d(1)(image)
+            grad = F.conv3d(padded, s[None, None, ...])
             grad = torch.abs(grad)
             grads.append(grad)
         return grads
@@ -232,10 +233,8 @@ class GradSampleWeights(SampleWeights):
             self._agg_grads = [self._aggregate_grad(g) for g in self.grads]
 
     def _aggregate_grad(self, grad):
-        starts = [(s - 1) // 2 for s in self.patches.patch_size]
-        stops = [s - 1 - ss for s, ss in zip(self.patches.patch_size, starts)]
-        padding = np.array([starts[::-1], stops[::-1]]).T.flatten().tolist()
-        padded_grad = torch.nn.ReplicationPad3d(padding)(grad[None, None, ...])
+        padding = calc_conv_padding(self.patches.patch_size)
+        padded_grad = torch.nn.ConstantPad3d(padding, 0)(grad[None, None, ...])
         agg_grad = F.conv3d(padded_grad, self.agg_kernel).squeeze(0).squeeze(0)
         return agg_grad
 

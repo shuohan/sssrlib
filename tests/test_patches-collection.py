@@ -88,11 +88,11 @@ def test_patches():
     sampler32 = Sampler(patches3, weights22.weights_flat, weights22.weights_mapping)
     sampler = SamplerCollection(sampler0, sampler11, sampler12, sampler20,
                                 sampler22, sampler30, sampler32)
-    print('Time', time.time() - start_time)
 
     indices = sampler.sample_indices(50)
     batch = sampler.get_patches(indices)
     assert list(batch.data.shape) == [50, 1, 128, 128]
+    print('Time', time.time() - start_time)
 
     print('Save')
     Path(dirname, 'patches').mkdir(exist_ok=True)
