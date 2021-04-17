@@ -206,7 +206,7 @@ class GradSampleWeights(SampleWeights):
     def save_figures(self, dirname, d3=True):
         if self.agg_kernel is not None:
             save_fig(dirname, self.agg_kernel, 'agg-kernel', d3=d3)
-        for i, g in enumerate(self._agg_gradients):
+        for i, g in enumerate(self._agg_grads):
             save_fig(dirname, g, 'agg-gradiant-%d' % i, d3=d3)
         save_fig(dirname, self._weights, 'weights', d3=d3)
 
@@ -229,7 +229,7 @@ class GradSampleWeights(SampleWeights):
         if self.agg_kernel is None:
             self._agg_grads = self.grads
         else:
-            self._agg_grads = [self._calc_agg_grad(g) for g in self.grads]
+            self._agg_grads = [self._aggregate_grad(g) for g in self.grads]
 
     def _aggregate_grad(self, grad):
         starts = [(s - 1) // 2 for s in self.patches.patch_size]

@@ -17,6 +17,8 @@ from scipy.ndimage import gaussian_filter
 from scipy.ndimage.filters import convolve
 from pathlib import Path
 
+from .utils import save_fig
+
 
 NamedData = namedtuple('NamedData', ['name', 'data'])
 """Data with its name.
@@ -54,6 +56,16 @@ class AbstractPatches:
 
         Returns:
             Patches: The instance itself.
+
+        """
+        raise NotImplementedError
+
+    def save_figures(self, dirname, d3=True):
+        """Saves the image.
+
+        Args:
+            dirname (str): The output directory.
+            d3 (bool): Save as 3D nifti file if ``True``.
 
         """
         raise NotImplementedError
@@ -224,6 +236,9 @@ class Patches(AbstractPatches):
             self._name_pattern = self._name_pattern % (nx, ny, nz)
         return self._name_pattern % ind
 
+    def save_figures(self, dirname, d3=True):
+        save_fig(dirname, self.image, 'image', cmap='gray', d3=d3)
+
 
 class TransformedPatches(AbstractPatches):
     """Wrapper class to transform Pathces.
@@ -287,6 +302,9 @@ class TransformedPatches(AbstractPatches):
         self.patches.cuda()
         return self
 
+    def save_figures(self, dirname, d3=True):
+        self.patches.save_figures(dirname, d3=d3)
+
 
 class PatchesCollection(AbstractPatches):
     """A collection of :class:`AbstractPatches`
@@ -333,3 +351,9 @@ class PatchesCollection(AbstractPatches):
 
     def append(self, patches):
         self._collection.append(patches)
+
+    def save_figures(self, dirname, d3=True):
+        num_digits = len(str(len(self._collection)))
+        for i, patch in enumerate(self._collection):
+            subdir = Path(dirname, ('%%0%dd' % num_digits) % i)
+            patch.save_figures(subdir, d3=d3)

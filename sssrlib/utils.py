@@ -17,9 +17,9 @@ def save_fig(dirname, image, prefix, cmap='jet', d3=True):
 
     """
     if d3:
-        save_fig_3d(dirname, image, prefix, cmap=cmap)
+        save_fig_3d(dirname, image, prefix)
     else:
-        save_fig_2d(dirname, image, prefix)
+        save_fig_2d(dirname, image, prefix, cmap=cmap)
 
 
 def save_fig_2d(dirname, image, prefix, cmap='jet'):
@@ -57,8 +57,7 @@ def save_fig_3d(dirname, image, prefix):
     Path(dirname).mkdir(exist_ok=True, parents=True)
     while image.ndim > 3:
         image = image.squeeze(0)
-    affine = np.eye(4) if affine is None else affine
-    obj = nib.Nifti1Image(image.cpu().numpy(), affine, header)
+    obj = nib.Nifti1Image(image.cpu().numpy(), np.eye(4))
     filename = Path(dirname, prefix + '.nii.gz')
     obj.to_filename(filename)
 
