@@ -9,7 +9,7 @@ from torch.utils.data._utils.collate import default_collate
 
 from .transform import create_transform_from_desc
 from .patches import PatchesCollection
-from .utils import save_fig
+from .utils import save_fig, save_fig_3d
 
 
 class ProbOp(str, Enum):
@@ -37,13 +37,23 @@ class SampleWeights:
         """Returns the weights in its 3D shape."""
         raise NotImplementedError
 
-    def save_figures(self, dirname):
+    def save_figures(self, dirname, d3=True):
         """Saves figures of intermediate results.
 
         Args:
             dirname (str): The directory to save these figures.
+            d3 (bool): Save the image as 3D nifti file if ``True``.
 
         """
+        if d3:
+            self._save_figures_3d(dirname)
+        else:
+            self._save_figures_2d(dirname)
+
+    def _save_figures_3d(self, dirname):
+        raise NotImplementedError
+
+    def _save_figures_2d(self, dirname):
         raise NotImplementedError
 
 
@@ -215,7 +225,20 @@ class GradSampleWeights(SampleWeights):
     def weights(self):
         return self._weights
 
-    def save_figures(self, dirname):
+    def _save_figures_3d(self, dirname):
+        save_fig_3d(dirname, self.patches.image, 'image')
+        save_fig_3d(dirname, self._denoise_kernel, 'denosie_kernel')
+        save_fig_3d(dirname, self._denoised, 'denosied')
+        save_fig_3d(dirname, self._interpolated, 'interpolated')
+        for i, g in enumerate(self._gradients):
+            save_fig_3d(dirname, g, 'gradiant-%d' % i)
+        save_fig_3d(dirname, self._weights, 'weights')
+        if self.agg_kernel is not None:
+            save_fig_3d(dirname, self.agg_kernel, 'agg-kernel')
+        for i, g in enumerate(self._agg_gradients):
+            save_fig_3d(dirname, g, 'agg-gradiant-%d' % i)
+
+    def _save_figures_2d(self, dirname):
         save_fig(dirname, self.patches.image, 'image', cmap='gray')
         save_fig(dirname, self._denoise_kernel, 'denosie_kernel')
         save_fig(dirname, self._denoised, 'denosied', cmap='gray')
@@ -299,10 +322,15 @@ class SuppressWeights(SampleWeights):
         """Returns the indices in the original shape."""
         return self._weights_mapping
 
-    def save_figures(self, dirname):
-        self.sample_weights.save_figures(dirname)
+    def _save_figures_2d(self, dirname):
+        self.sample_weights._save_figures_2d(dirname)
         save_fig(dirname, self._pooled_weights, 'pooled-weights')
         save_fig(dirname, self._sup_weights, 'sup-weights')
+
+    def _save_figures_3d(self, dirname):
+        self.sample_weights._save_figures_3d(dirname)
+        save_fig_3d(dirname, self._pooled_weights, 'pooled-weights')
+        save_fig_3d(dirname, self._sup_weights, 'sup-weights')
 
     def __str__(self):
         message = self.sample_weights.__str__()

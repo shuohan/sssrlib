@@ -66,7 +66,9 @@ def test_patches():
     weights22 = SuppressWeights(weights22, kernel_size=kernel_size, stride=stride)
 
     save_sample_weights_figures([weights0, weights11, weights12, weights20,
-                                 weights22], dirname)
+                                 weights22], dirname.joinpath('3d'), d3=True)
+    save_sample_weights_figures([weights0, weights11, weights12, weights20,
+                                 weights22], dirname.joinpath('2d'), d3=False)
 
     print('Sample')
     sampler0 = Sampler(patches0, weights0.weights_flat)
