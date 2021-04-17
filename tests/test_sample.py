@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from sssrlib.patches import Patches
-from sssrlib.sample import UniformSample, GradSample
+from sssrlib.sample import GradSampleWeights, Sampler
 
 
 def test_sample():
@@ -17,19 +17,22 @@ def test_sample():
 
     dirname = 'results_sample/and'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches)
-    sample.save_figures(dirname)
-    indices = sample.sample_indices(3)
-    batch = sample.get_patches(indices)
+
+    sample_weights = GradSampleWeights(patches, weights_op='and')
+    sample_weights.save_figures(dirname)
+
+    sampler = Sampler(patches, sample_weights.weights_flat)
+    indices = sampler.sample_indices(3)
+    batch = sampler.get_patches(indices)
 
     for i in range(batch.shape[0]):
         fig = plt.figure()
         plt.imshow(batch[i, ...].squeeze())
         fig.savefig(Path(dirname, '%s.png' % i))
 
-    assert len(sample._weights_flat) == len(patches)
-    grads = [sample._gradients[0], sample._gradients[2]]
+    assert len(sampler.weights_flat) == len(patches)
 
+    grads = [sample_weights._gradients[0], sample_weights._gradients[2]]
     starts = [(ps - 1) // 2 for ps in patches.patch_size]
     sum0 = grads[0][starts[0] : starts[0]+patches.xnum,
                     starts[1] : starts[1]+patches.ynum,
@@ -41,13 +44,13 @@ def test_sample():
     grads[1] = grads[1] / sum1
     grad = grads[0] * grads[1]
     for i in range(100):
-        ind = int(np.random.uniform(0, len(sample._weights_flat)))
+        ind = int(np.random.uniform(0, len(sampler.weights_flat)))
         x, y, z = np.unravel_index(ind, [patches.xnum, patches.ynum, patches.znum])
-        assert sample._weights_flat[ind] == grad[x + (patches.patch_size[0] - 1)//2,
+        assert sampler.weights_flat[ind] == grad[x + (patches.patch_size[0] - 1)//2,
                                                  y + (patches.patch_size[1] - 1)//2,
                                                  z + (patches.patch_size[2] - 1)//2]
 
-    sample = GradSample(patches, 3, weights_op='or')
+    sample = GradSampleWeights(patches, sigma=3, weights_op='or')
     dirname = 'results_sample/or'
     os.system('rm -rf %s' % dirname)
     sample.save_figures(dirname)
@@ -55,11 +58,12 @@ def test_sample():
     image = zoom(image, (1, 1, 0.4))
     patches = Patches((32, 32, 1), image, named=False, voxel_size=(1, 1, 2.5))
 
-    dirname = 'results_sample/x'
+    dirname = 'results_sample/x_grad'
     os.system('rm -rf %s' % dirname)
-    sample = GradSample(patches, use_grads=[True, False, False])
-    sample.save_figures(dirname)
-    indices = sample.sample_indices(3)
+    sample_weights = GradSampleWeights(patches, use_grads=[True, False, False])
+    sample_weights.save_figures(dirname)
+    sampler = Sampler(patches, sample_weights.weights_flat)
+    indices = sampler.sample_indices(3)
 
     for i in range(batch.shape[0]):
         fig = plt.figure()

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from sssrlib.patches import Patches
-from sssrlib.sample import AvgGradSample, SuppressWeights
+from sssrlib.sample import GradSampleWeights, SuppressWeights, Sampler
 
 
 def test_sup_sample():
@@ -19,20 +19,22 @@ def test_sup_sample():
 
     dirname = 'results_sup_sample'
     os.system('rm -rf %s' % dirname)
-    sample = AvgGradSample(patches)
-    sample = SuppressWeights(sample, stride=[16, 16, 1], kernel_size=[32, 32, 1])
-    sample.save_figures(dirname)
-    indices = sample.sample_indices(3)
-    batch = sample.get_patches(indices)
+    weights = GradSampleWeights(patches)
+    weights = SuppressWeights(weights, stride=[16, 16, 1], kernel_size=[32, 32, 1])
+    weights.save_figures(dirname)
+
+    sampler = Sampler(patches, weights.weights_flat, weights.weights_mapping)
+    indices = sampler.sample_indices(3)
+    batch = sampler.get_patches(indices)
     for i in range(batch.shape[0]):
         fig = plt.figure()
         plt.imshow(batch[i, ...].squeeze())
         fig.savefig(Path(dirname, '%s.png' % i))
 
-    filename = Path(dirname, 'sup-weights.nii.gz')
-    nib.Nifti1Image(sample._sup_weights.cpu().numpy(), np.eye(4)).to_filename(filename)
-    filename = Path(dirname, 'weights.nii.gz')
-    nib.Nifti1Image(sample.sample._weights.cpu().numpy(), np.eye(4)).to_filename(filename)
+    assert torch.equal(weights.weights_flat,
+                       weights.sample_weights.weights_flat[weights.weights_mapping])
+
+    print('successful')
 
 if __name__ == '__main__':
     test_sup_sample()
