@@ -6,7 +6,23 @@ import numpy as np
 from pathlib import Path
 
 
-def save_fig(dirname, image, prefix, cmap='jet'):
+def save_fig(dirname, image, prefix, cmap='jet', d3=True):
+    """Saves a 3D image.
+
+    Args:
+        dirname (str): The output directory.
+        image (torch.Tensor): The 3D image to save.
+        prefix (str): The basename of the file.
+        cmap (str): The colormap to use for the image if ``d3`` is ``False``.
+
+    """
+    if d3:
+        save_fig_3d(dirname, image, prefix, cmap=cmap)
+    else:
+        save_fig_2d(dirname, image, prefix)
+
+
+def save_fig_2d(dirname, image, prefix, cmap='jet'):
     """Saves 3 views of an image.
 
     Args:
@@ -29,14 +45,13 @@ def save_fig(dirname, image, prefix, cmap='jet'):
         plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
 
 
-def save_fig_3d(dirname, image, prefix, affine=None, header=None):
+def save_fig_3d(dirname, image, prefix):
     """Saves the image as 3D nifti file.
 
     Args:
         dirname (str): The output directory.
         image (torch.Tensor): The 3D image to save.
         prefix (str): The basename of the file.
-        cmap (str): The colormap to use for the image.
 
     """
     Path(dirname).mkdir(exist_ok=True, parents=True)
@@ -61,19 +76,3 @@ def calc_avg_kernel(kernel_size):
     kernel = np.ones(kernel_size, dtype=np.float32)
     kernel = kernel / np.sum(kernel)
     return kernel
-
-
-def save_sample_weights_figures(all_sample_weights, dirname, d3=True):
-    """Saves figures of all :class:`SampleWeights` instances.
-
-    Args:
-        all_sample_weights (list[SampleWeights]): All instance to save figures.
-        dirname (str): The figure output directory.
-        d3 (bool): Save as 3D nifti files if ``True``.
-
-    """
-    num_digits = len(str(len(all_sample_weights)))
-    pattern = '%%0%dd' % num_digits
-    for i, sw in enumerate(all_sample_weights):
-        subdir = Path(dirname, pattern % i)
-        sw.save_figures(subdir, d3=d3)

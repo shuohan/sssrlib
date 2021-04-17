@@ -9,7 +9,7 @@ from torch.utils.data._utils.collate import default_collate
 
 from .transform import create_transform_from_desc
 from .patches import PatchesCollection
-from .utils import save_fig, save_fig_3d
+from .utils import save_fig
 
 
 class ProbOp(str, Enum):
@@ -45,72 +45,61 @@ class SampleWeights:
             d3 (bool): Save the image as 3D nifti file if ``True``.
 
         """
-        if d3:
-            self._save_figures_3d(dirname)
-        else:
-            self._save_figures_2d(dirname)
-
-    def _save_figures_3d(self, dirname):
-        raise NotImplementedError
-
-    def _save_figures_2d(self, dirname):
         raise NotImplementedError
 
 
-class GradSampleWeights(SampleWeights):
-    """Samples patches weighted by image gradients.
+class ImageGradients:
+    """Calculates image gradient magnitude.
 
-    There are four steps to calculate image gradients:
+    * Denoise the image
+    * Interpolate the image to account for different resolution along
+      each axis
+    * Calculate image gradients along each axis using the Sobel operator
 
-        * Denoise the image
-        * Interpolate the image to account for different resolution along
-          each axis
-        * Calculate image gradients along each axis using the Sobel operator
-        * Aggregate all gradients within the patch size to the patch center,
-          so the patch center can represent the amount of all gradients
-          within each patch
-        * Interpolate the image back to the original shape
-
-    Suppose the sampling probability of a patch depends on gradients along
-    some of the axes, e.g., p(gx, gy). Further suppose the gradients are
-    independent from each other; therefore, p(gx, gy) = p(gx) p(gy). The
-    probabilty along an axis, e.g., p(gz), should be normalized across all
-    patches.
-
-    If :attr:`weights_op`] is OR, use fuzzy OR to combine p(gx) and p(gy)
-    instead of p(gx) p(gy) (fuzzy AND).
-
-    Attributes:
+    Args:
         patches (sssrlib.patches.AbstractPatches): The patches to calculate
-            weights for.
+            image gradients for.
         sigma (float): The sigma (in mm) of Gaussian filter to denoise before
             calculating the probability map. Do not denoise if 0.
-        use_grads (iterable[bool]): Whether to use a gradients in the order of
-            x, y, z axes.
-        weights_op (ProbOp): How to combine the probabilties calculated from
-            difrerent gradients.
-        agg_kernel (numpy.ndarray): The kernel to aggregate gradients to the
-            patch center.
 
     """
-    def __init__(self, patches, sigma=1, use_grads=[True, False, True],
-                 weights_op=ProbOp.OR, agg_kernel=None):
-        super().__init__(patches)
+    def __init__(self, patches, sigma=1):
+        self.patches = patches
         self.sigma = sigma
-        self.use_grads = use_grads
-        self.weights_op = ProbOp(weights_op)
-        self._init_agg_kernel(agg_kernel)
+        self._interp_mode = 'trilinear'
         self._init_denoise_kernel()
-        self._calc_sample_weights()
+        self._denoise_image()
+        self._interpolate_image()
+        self._calc_image_grads()
 
-    def _init_agg_kernel(self, kernel):
-        if kernel is None:
-            self.agg_kernel = None
-        else:
-            kernel = padcrop3d(kernel, self.patches.patch_size, False)
-            kernel = torch.tensor(kernel, dtype=self.patches.image.dtype,
-                                  device=self.patches.image.device)
-            self.agg_kernel = kernel[None, None, ...]
+    @property
+    def denoised(self):
+        """Returns the denoised image."""
+        return self._denoised.squeeze(0).squeeze(0)
+
+    @property
+    def interpolated(self):
+        """Returns the isotropic interpolated from the denoised image."""
+        return self._interpolated.squeeze(0).squeeze(0)
+
+    @property
+    def gradients(self):
+        """Returns a list of image gradient magnitude along three axes."""
+        return tuple(g.squeeze(0).squeeze(0) for g in self._gradients)
+
+    def save_figures(self, dirname, d3=True):
+        """Saves figures of intermediate results.
+
+        Args:
+            dirname (str): The directory to save these figures.
+            d3 (bool): Save the image as 3D nifti file if ``True``.
+
+        """
+        save_fig(dirname, self._denoise_kernel, 'denosie_kernel', d3=d3)
+        save_fig(dirname, self._denoised, 'denoise', cmap='gray', d3=d3)
+        save_fig(dirname, self._interpolated, 'interpolate', cmap='gray', d3=d3)
+        for i, g in enumerate(self._gradients):
+            save_fig(dirname, g, 'gradiant-%d' % i, d3=d3)
 
     def _init_denoise_kernel(self):
         """Use a 3D Gaussian function as the denoising kernel.
@@ -132,29 +121,25 @@ class GradSampleWeights(SampleWeights):
         kernel = kernel[None, None, ...]
         self._denoise_kernel = kernel.to(device=self.patches.image.device)
 
-    def _calc_image_grads(self):
+    def _denoise_image(self):
         self._denoised = self.patches.image[None, None, ...]
         if self.sigma > 0:
             padding = [s // 2 for s in self._denoise_kernel.shape[2:]]
             self._denoised = F.conv3d(self._denoised, self._denoise_kernel,
                                       padding=padding)
 
-        mode = 'trilinear'
+    def _interpolate_image(self):
         scale_factor = np.array(self.patches.voxel_size)
         scale_factor = scale_factor / min(scale_factor)
-        self._interpolated = F.interpolate(self._denoised, mode=mode,
+        self._interpolated = F.interpolate(self._denoised,
+                                           mode=self._interp_mode,
                                            scale_factor=scale_factor.tolist())
 
+    def _calc_image_grads(self):
         grads = self._calc_sobel_grads(self._interpolated)
         shape = self.patches.image.shape
-        grads = tuple(F.interpolate(g, size=shape, mode=mode) for g in grads)
-        self._gradients = tuple(g.squeeze() for g in grads)
-
-        if self.agg_kernel is None:
-            self._agg_gradients = self._gradients
-        else:
-            self._agg_gradients = [self._calc_agg_grad(g)
-                                   for g in self._gradients]
+        self._gradients = [F.interpolate(g, size=shape, mode=self._interp_mode)
+                           for g in grads]
 
     def _calc_sobel_grads(self, image):
         """Calculate image gradient magnitude using the Sobel operator."""
@@ -171,7 +156,82 @@ class GradSampleWeights(SampleWeights):
             grads.append(grad)
         return grads
 
-    def _calc_agg_grad(self, grad):
+
+class GradSampleWeights(SampleWeights):
+    """Samples patches weighted by image gradients.
+
+    There are four steps to calculate image gradients:
+
+        * Aggregate all gradients within the patch size to the patch center,
+          so the patch center can represent the amount of all gradients
+          within each patch
+        * Interpolate the image back to the original shape
+
+    Suppose the sampling probability of a patch depends on gradients along
+    some of the axes, e.g., p(gx, gy). Further suppose the gradients are
+    independent from each other; therefore, p(gx, gy) = p(gx) p(gy). The
+    probabilty along an axis, e.g., p(gz), should be normalized across all
+    patches.
+
+    If :attr:`weights_op` is OR, use fuzzy OR to combine p(gx) and p(gy)
+    instead of p(gx) p(gy) (fuzzy AND).
+
+    Attributes:
+        patches (sssrlib.patches.AbstractPatches): The patches to calculate
+            weights for.
+        grads (tuple[torch.Tensor]): The image gradient magnitude used to
+            calculate the sampling weights (can be a subset of all gradients).
+        weights_op (ProbOp): How to combine the probabilties calculated from
+            difrerent gradients.
+        agg_kernel (numpy.ndarray): The kernel to aggregate gradients to the
+            patch center.
+
+    """
+    def __init__(self, patches, grads, weights_op=ProbOp.OR, agg_kernel=None):
+        super().__init__(patches)
+        self.grads = grads
+        self.weights_op = ProbOp(weights_op)
+        self._init_agg_kernel(agg_kernel)
+        self._aggregate_grads()
+        self._calc_sample_weights()
+
+    @property
+    def weights(self):
+        return self._weights
+
+    @property
+    def weights_flat(self):
+        return self._weights_flat
+
+    def save_figures(self, dirname, d3=True):
+        if self.agg_kernel is not None:
+            save_fig(dirname, self.agg_kernel, 'agg-kernel', d3=d3)
+        for i, g in enumerate(self._agg_gradients):
+            save_fig(dirname, g, 'agg-gradiant-%d' % i, d3=d3)
+        save_fig(dirname, self._weights, 'weights', d3=d3)
+
+    def __str__(self):
+        m = self.patches.__str__()
+        m += ['', 'Weights operator: {}'.format(self.weights_op),
+              'Aggregating kernel shape: {}'.format(self.agg_kernel.shape)]
+        return '\n'.join(m)
+
+    def _init_agg_kernel(self, kernel):
+        if kernel is None:
+            self.agg_kernel = None
+        else:
+            kernel = padcrop3d(kernel, self.patches.patch_size, False)
+            kernel = torch.tensor(kernel, dtype=self.patches.image.dtype,
+                                  device=self.patches.image.device)
+            self.agg_kernel = kernel[None, None, ...]
+
+    def _aggregate_grads(self):
+        if self.agg_kernel is None:
+            self._agg_grads = self.grads
+        else:
+            self._agg_grads = [self._calc_agg_grad(g) for g in self.grads]
+
+    def _aggregate_grad(self, grad):
         starts = [(s - 1) // 2 for s in self.patches.patch_size]
         stops = [s - 1 - ss for s, ss in zip(self.patches.patch_size, starts)]
         padding = np.array([starts[::-1], stops[::-1]]).T.flatten().tolist()
@@ -180,9 +240,7 @@ class GradSampleWeights(SampleWeights):
         return agg_grad
 
     def _calc_sample_weights(self):
-        self._calc_image_grads()
-        grads = [g for g, ug in zip(self._agg_gradients, self.use_grads) if ug]
-        weights = self._calc_weights_at_patch_center(grads)
+        weights = self._calc_weights_at_patch_center(self._agg_grads)
         weights = [w / torch.sum(w) for w in weights]
         self._weights = self._combine_weights(weights)
         self._weights_flat = self._weights.flatten()
@@ -217,48 +275,6 @@ class GradSampleWeights(SampleWeights):
             weights = 1.0 - torch.prod(torch.stack(rev_weights), axis=0)
         return weights
 
-    @property
-    def weights_flat(self):
-        return self._weights_flat
-
-    @property
-    def weights(self):
-        return self._weights
-
-    def _save_figures_3d(self, dirname):
-        save_fig_3d(dirname, self.patches.image, 'image')
-        save_fig_3d(dirname, self._denoise_kernel, 'denosie_kernel')
-        save_fig_3d(dirname, self._denoised, 'denosied')
-        save_fig_3d(dirname, self._interpolated, 'interpolated')
-        for i, g in enumerate(self._gradients):
-            save_fig_3d(dirname, g, 'gradiant-%d' % i)
-        save_fig_3d(dirname, self._weights, 'weights')
-        if self.agg_kernel is not None:
-            save_fig_3d(dirname, self.agg_kernel, 'agg-kernel')
-        for i, g in enumerate(self._agg_gradients):
-            save_fig_3d(dirname, g, 'agg-gradiant-%d' % i)
-
-    def _save_figures_2d(self, dirname):
-        save_fig(dirname, self.patches.image, 'image', cmap='gray')
-        save_fig(dirname, self._denoise_kernel, 'denosie_kernel')
-        save_fig(dirname, self._denoised, 'denosied', cmap='gray')
-        save_fig(dirname, self._interpolated, 'interpolated', cmap='gray')
-        for i, g in enumerate(self._gradients):
-            save_fig(dirname, g, 'gradiant-%d' % i, cmap='jet')
-        save_fig(dirname, self._weights, 'weights', cmap='jet')
-        if self.agg_kernel is not None:
-            save_fig(dirname, self.agg_kernel, 'agg-kernel', cmap='jet')
-        for i, g in enumerate(self._agg_gradients):
-            save_fig(dirname, g, 'agg-gradiant-%d' % i, cmap='jet')
-
-    def __str__(self):
-        m = self.patches.__str__()
-        m += ['', 'Deniose sigma: {}'.format(self.sigma),
-              'Use gradients: {}'.format(self.use_grads),
-              'Weights operator: {}'.format(self.weights_op),
-              'Aggregating kernel shape: {}'.format(self.agg_kernel.shape)]
-        return '\n'.join(m)
-
 
 class SuppressWeights(SampleWeights):
     """Wrapper class to suppresse non-maxima locally of sampling weights.
@@ -282,12 +298,47 @@ class SuppressWeights(SampleWeights):
         self.stride = stride
         self._suppress_weights()
 
+    @property
+    def patches(self):
+        return self.sample_weights.patches
+
+    @property
+    def weights(self):
+        """Returns the suppressed weights in the original shape."""
+        return self._sup_weights
+
+    @property
+    def weights_flat(self):
+        """Returns the flattened suppressed weights."""
+        return self._sup_weights_flat
+
+    @property
+    def pooled_weights(self):
+        """Returns the pooled weights."""
+        return self._pooled_weights
+
+    @property
+    def weights_mapping(self):
+        """Returns the indices in the original shape."""
+        return self._weights_mapping
+
+    def save_figures(self, dirname, d3=True):
+        self.sample_weights.save_figures(dirname, d3=True)
+        save_fig(dirname, self._pooled_weights, 'pooled-weights', d3=True)
+        save_fig(dirname, self._sup_weights, 'sup-weights', d3=True)
+
+    def __str__(self):
+        message = self.sample_weights.__str__()
+        message += ['', 'Stride: {}'.format(self.stride),
+                    'Kernel size: {}'.format(self.kernel_size)]
+        return '\n'.join(message)
+
     def _suppress_weights(self):
         """Suppresses non-maxima of weights locally.
 
         Args:
             weights (torch.Tensor): The weights to suppress.
-            weights_stride (iterable[ind]): The distances between two adjacent
+            weights_stride (iterable[ind]): The distance0 between two adjacent
                 windows.
 
         Returns:
@@ -297,46 +348,13 @@ class SuppressWeights(SampleWeights):
         weights = self.sample_weights.weights[None, None, ...]
         pooled, indices = F.max_pool3d(weights, kernel_size=self.kernel_size,
                                        stride=self.stride, return_indices=True)
-        self._pooled_weights = pooled.squeeze()
+        self._pooled_weights = pooled.squeeze(0).squeeze(0)
         unpooled = F.max_unpool3d(pooled, indices, self.kernel_size,
                                   stride=self.stride, output_size=weights.shape)
-        self._sup_weights = unpooled.squeeze()
+        self._sup_weights = unpooled.squeeze(0).squeeze(0)
         sup_weights_flat = self._sup_weights.flatten()
         self._weights_mapping = torch.where(sup_weights_flat > 0)[0]
         self._sup_weights_flat = sup_weights_flat[self._weights_mapping]
-
-    @property
-    def patches(self):
-        return self.sample_weights.patches
-
-    @property
-    def weights(self):
-        return self._sup_weights
-
-    @property
-    def weights_flat(self):
-        return self._sup_weights_flat
-
-    @property
-    def weights_mapping(self):
-        """Returns the indices in the original shape."""
-        return self._weights_mapping
-
-    def _save_figures_2d(self, dirname):
-        self.sample_weights._save_figures_2d(dirname)
-        save_fig(dirname, self._pooled_weights, 'pooled-weights')
-        save_fig(dirname, self._sup_weights, 'sup-weights')
-
-    def _save_figures_3d(self, dirname):
-        self.sample_weights._save_figures_3d(dirname)
-        save_fig_3d(dirname, self._pooled_weights, 'pooled-weights')
-        save_fig_3d(dirname, self._sup_weights, 'sup-weights')
-
-    def __str__(self):
-        message = self.sample_weights.__str__()
-        message += ['', 'Stride: {}'.format(self.stride),
-                    'Kernel size: {}'.format(self.kernel_size)]
-        return '\n'.join(message)
 
 
 class Sampler:
