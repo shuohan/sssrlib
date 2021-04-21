@@ -42,6 +42,16 @@ def test_patches():
     dirname.mkdir(exist_ok=True)
     patches.save_figures(Path(dirname, 'images'), d3=False)
 
+    print('Uniform')
+    sampler_uniform = Sampler(patches0)
+    indices = sampler_uniform.sample_indices(50)
+    batch = sampler_uniform.get_patches(indices)
+    Path(dirname, 'uniform').mkdir(exist_ok=True)
+    for i in range(batch.data.shape[0]):
+        data = batch.data[i, 0, ...]
+        name = batch.name[i]
+        plt.imsave(Path(dirname, 'uniform', name + '.jpg'), data.squeeze(), cmap='gray')
+
     agg_kernel_yz = calc_avg_kernel(ps2d)
     agg_kernel_xz = calc_avg_kernel(ps2d_t)
     kernel_size = (4, 4, 1)
