@@ -68,20 +68,28 @@ class Transform:
     """Abstract class to transform an image patch.
 
     """
-    def __call__(self, patch):
+    def __call__(self, patch, channel_dim=True):
         """Calls the method :meth:`transform`."""
-        return self.transform(patch)
+        return self.transform(patch, channel_dim=channel_dim)
 
-    def transform(self, patch):
+    def transform(self, patch, channel_dim=True):
         """Transforms an image patch.
 
         Args:
             patch (numpy.ndarray): The patch to transform.
+            channel_dim (bool): Whether the channel dim has been expanded for
+                this patch.
 
         Returns:
             numpy.ndarray: The transformed image patch.
 
         """
+        patch = patch.squeeze(0) if channel_dim else patch
+        patch = self._transform(patch)
+        patch = patch[None, ...] if channel_dim else patch
+        return patch
+
+    def _transform(self, patch):
         raise NotImplementedError
 
     def get_name(self):
@@ -108,7 +116,7 @@ class Rot90(Transform):
         # self.axes = axes
         self.axes = (0, 1)
 
-    def transform(self, patch):
+    def _transform(self, patch):
         return rot90(patch, self.k, self.axes)
 
     def __str__(self):
@@ -132,7 +140,7 @@ class Flip(Transform):
         self.axis = axis
         # self.axis = (0, )
 
-    def transform(self, patch):
+    def _transform(self, patch):
         return flip(patch, axis=self.axis)
 
     def __str__(self):
@@ -153,10 +161,10 @@ class Compose(Transform):
         super().__init__()
         self.transforms = transforms
 
-    def transform(self, patch):
+    def transform(self, patch, channel_dim=True):
         result = patch
         for trans in self.transforms:
-            result = trans.transform(result)
+            result = trans.transform(result, channel_dim=channel_dim)
         return result
 
     def __str__(self):

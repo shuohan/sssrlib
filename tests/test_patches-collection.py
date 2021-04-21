@@ -29,7 +29,7 @@ def test_patches():
     patches1 = Patches(ps2d, image, x=2, y=0, z=1)
     patches2 = Patches(ps2d_t, patches=patches1)
     patches3 = Patches(ps2d_t, patches=patches2)
-    patches3 = TransformedPatches(patches3, Flip((-2, )))
+    patches3 = TransformedPatches(patches3, Flip((0, )))
     patches = PatchesCollection(patches0, patches1, patches2, patches3)
     
     assert len(patches2) == len(patches3)
