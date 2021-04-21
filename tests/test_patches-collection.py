@@ -40,7 +40,7 @@ def test_patches():
     dirname = Path('results_patches-collection')
     os.system('rm -rf %s' % dirname)
     dirname.mkdir(exist_ok=True)
-    patches.save_figures(Path(dirname, 'images'))
+    patches.save_figures(Path(dirname, 'images'), d3=False)
 
     agg_kernel_yz = calc_avg_kernel(ps2d)
     agg_kernel_xz = calc_avg_kernel(ps2d_t)
@@ -51,8 +51,8 @@ def test_patches():
     start_time = time.time()
     grads0 = ImageGradients(patches0, sigma=3)
     grads1 = ImageGradients(patches1, sigma=3)
-    grads0.save_figures(Path(dirname, 'grads', '0'))
-    grads1.save_figures(Path(dirname, 'grads', '1'))
+    grads0.save_figures(Path(dirname, 'grads', '0'), d3=False)
+    grads1.save_figures(Path(dirname, 'grads', '1'), d3=False)
     print('Time', time.time() - start_time)
 
     print('Create weights')
@@ -71,11 +71,11 @@ def test_patches():
     weights22 = SuppressWeights(weights22, kernel_size=kernel_size, stride=stride)
     print('Time', time.time() - start_time)
 
-    weights0.save_figures(Path(dirname, 'weights', '0'))
-    weights11.save_figures(Path(dirname, 'weights', '11'))
-    weights12.save_figures(Path(dirname, 'weights', '12'))
-    weights20.save_figures(Path(dirname, 'weights', '20'))
-    weights22.save_figures(Path(dirname, 'weights', '22'))
+    weights0.save_figures(Path(dirname, 'weights', '0'), d3=False)
+    weights11.save_figures(Path(dirname, 'weights', '11'), d3=False)
+    weights12.save_figures(Path(dirname, 'weights', '12'), d3=False)
+    weights20.save_figures(Path(dirname, 'weights', '20'), d3=False)
+    weights22.save_figures(Path(dirname, 'weights', '22'), d3=False)
 
     print('Sample')
     start_time = time.time()
@@ -99,9 +99,7 @@ def test_patches():
     for i in range(batch.data.shape[0]):
         data = batch.data[i, 0, ...]
         name = batch.name[i]
-        fig = plt.figure()
-        plt.imshow(data)
-        fig.savefig(Path(dirname, 'patches', name + '.png'), cmap='grey')
+        plt.imsave(Path(dirname, 'patches', name + '.jpg'), data.squeeze(), cmap='gray')
 
     print('successful')
 

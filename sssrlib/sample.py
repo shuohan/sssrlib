@@ -322,9 +322,9 @@ class SuppressWeights(SampleWeights):
         return self._weights_mapping
 
     def save_figures(self, dirname, d3=True):
-        self.sample_weights.save_figures(dirname, d3=True)
-        save_fig(dirname, self._pooled_weights, 'pooled-weights', d3=True)
-        save_fig(dirname, self._sup_weights, 'sup-weights', d3=True)
+        self.sample_weights.save_figures(dirname, d3=d3)
+        save_fig(dirname, self._pooled_weights, 'pooled-weights', d3=d3)
+        save_fig(dirname, self._sup_weights, 'sup-weights', d3=d3)
 
     def __str__(self):
         message = self.sample_weights.__str__()
