@@ -65,12 +65,15 @@ image = obj.get_fdata(dtype=np.float32)
 if args.to_axial_view:
     image = transform_to_axial(image, obj.affine, coarse=True).copy()
 patches = Patches(args.patch_size, image)
-if args.transforms is not None:
+if args.transforms not in {None, 'none'}:
     trans = create_transform_from_desc(args.transforms)
     patches = TransformedPatches(patches, trans)
 dirname = Path(args.outdir, 'image')
 dirname.mkdir(exist_ok=True, parents=True)
 patches.save_figures(dirname, d3=False)
+
+print('-' * 80)
+print('Patches:')
 print(patches)
 
 if args.use_gradients:
@@ -78,19 +81,24 @@ if args.use_gradients:
     dirname = Path(args.outdir, 'grads')
     dirname.mkdir(exist_ok=True, parents=True)
     im_grads.save_figures(dirname, d3=False)
+
+    print('-' * 80)
+    print('Gradients:')
     print(im_grads)
 
     gradients = tuple(im_grads.gradients[i] for i in args.use_gradients)
-    agg_k = calc_avg_kernel(args.patch_size) if ars.use_agg_grads else None
+    agg_k = calc_avg_kernel(args.patch_size) if args.use_agg_grads else None
     weights = GradSampleWeights(patches, gradients, weights_op=args.fuzzy_op,
                                 agg_kernel=agg_k)
-    if args.supress_weights:
+    if args.suppress_weights:
         weights = SuppressWeights(weights,
                                   kernel_size=args.suppress_kernel_size,
                                   stride=args.suppress_stride)
     dirname = Path(args.outdir, 'weights')
     dirname.mkdir(exist_ok=True, parents=True)
     weights.save_figures(dirname, d3=False)
+    print('-' * 80)
+    print('Weights:')
     print(weights)
 
 weights_flat = weights.weights_flat if args.use_gradients else None

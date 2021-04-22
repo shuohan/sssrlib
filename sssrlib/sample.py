@@ -72,6 +72,9 @@ class ImageGradients:
         self._interpolate_image()
         self._calc_image_grads()
 
+    def __str__(self):
+        return 'Sigma: {}'.format(self.sigma)
+
     @property
     def denoised(self):
         """Returns the denoised image."""
@@ -212,9 +215,8 @@ class GradSampleWeights(SampleWeights):
         save_fig(dirname, self._weights, 'weights', d3=d3)
 
     def __str__(self):
-        m = self.patches.__str__()
-        m += ['', 'Weights operator: {}'.format(self.weights_op),
-              'Aggregating kernel shape: {}'.format(self.agg_kernel.shape)]
+        m = ['Weights operator: {}'.format(self.weights_op),
+             'Aggregating kernel shape: {}'.format(self.agg_kernel.shape)]
         return '\n'.join(m)
 
     def _init_agg_kernel(self, kernel):
@@ -327,9 +329,9 @@ class SuppressWeights(SampleWeights):
         save_fig(dirname, self._sup_weights, 'sup-weights', d3=d3)
 
     def __str__(self):
-        message = self.sample_weights.__str__()
-        message += ['', 'Stride: {}'.format(self.stride),
-                    'Kernel size: {}'.format(self.kernel_size)]
+        message = [self.sample_weights.__str__(),
+                   'Stride: {}'.format(self.stride),
+                   'Kernel size: {}'.format(self.kernel_size)]
         return '\n'.join(message)
 
     def _suppress_weights(self):
