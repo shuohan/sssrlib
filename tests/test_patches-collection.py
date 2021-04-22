@@ -109,7 +109,7 @@ def test_patches():
     for i in range(batch.data.shape[0]):
         data = batch.data[i, 0, ...]
         name = batch.name[i]
-        plt.imsave(Path(dirname, 'patches', name + '.jpg'), data.squeeze(), cmap='gray')
+        plt.imsave(Path(dirname, 'patches', name + '.jpg'), data.squeeze().T, cmap='gray')
 
     print('successful')
 

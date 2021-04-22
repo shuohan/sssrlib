@@ -42,7 +42,7 @@ def save_fig_2d(dirname, image, prefix, cmap='jet'):
              'view-xy': image[:, :, image.shape[2]//2].cpu().numpy()}
     for k, v in views.items():
         filename = Path(dirname, '%s_%s.png' % (prefix, k))
-        plt.imsave(filename, v, vmin=0, vmax=0.95, cmap=cmap)
+        plt.imsave(filename, v.T, vmin=0, vmax=0.95, cmap=cmap)
 
 
 def save_fig_3d(dirname, image, prefix):
