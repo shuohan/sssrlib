@@ -43,6 +43,8 @@ help = ('A description string such as flip01, flip0, rot901, and rot902. '
         'when using rot90, the sizes of patches should be equal along the two '
         'dimensions.')
 parser.add_argument('-t', '--transforms', help=help)
+parser.add_argument('-N', '--save-step', default=1000, type=int,
+                    help='The step size to save an extracted patch.')
 
 args = parser.parse_args()
 
@@ -50,6 +52,7 @@ args = parser.parse_args()
 import nibabel as nib
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image
 from improc3d import transform_to_axial
 from pathlib import Path
 
@@ -109,10 +112,18 @@ indices = sampler.sample_indices(args.num_patches)
 batch = sampler.get_patches(indices)
 dirname = Path(args.outdir, 'patches')
 dirname.mkdir(exist_ok=True, parents=True)
-for i in range(batch.data.shape[0]):
-    if i % 1000 == 0:
-        print('Save patch', i)
-    data = batch.data[i, 0, ...]
-    name = batch.name[i]
-    plt.imsave(Path(dirname, name + '.jpg'), data.squeeze().T, cmap='gray')
 np.save(Path(args.outdir, 'patches.npy'), batch.data)
+
+min_val = np.min(image)
+max_val = np.max(image)
+for i in range(batch.data.shape[0]):
+    if i % args.save_step == 0:
+        print('Save patch', i)
+        data = batch.data[i, 0, ...]
+        data = (data - min_val) * (max_val - min_val) * 255
+        data = data.numpy().astype(np.uint8)
+        name = batch.name[i]
+        data_to_show = data
+        if data.ndim == 1:
+            data_to_show = data[..., None]
+        Image.fromarray(data_to_show.T).save(Path(dirname, name + '.png'))
