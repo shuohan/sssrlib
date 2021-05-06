@@ -148,7 +148,7 @@ class Patches(AbstractPatches):
         self.voxel_size = np.array((voxel_size[x],
                                     voxel_size[y],
                                     voxel_size[z]))
-        self.image = self._permute_image(image)
+        self.image, self.ix, self.iy, self.iz = self._permute_image(image)
 
     def _init_from_patches(self, patches):
         attrs = ['x', 'y', 'z', 'image', 'voxel_size']
@@ -158,8 +158,7 @@ class Patches(AbstractPatches):
     def _permute_image(self, image):
         """Permutes the input image."""
         image = torch.tensor(image).float().contiguous()
-        image = permute3d(image, self.x, self.y, self.z)[0]
-        return image
+        return permute3d(image, self.x, self.y, self.z)
 
     def _init_patch_numbers(self, shape=None):
         shape = self.image.shape if shape is None else shape
