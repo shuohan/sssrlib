@@ -147,7 +147,7 @@ class Flip(Transform):
         return 'flip along %s axis' % str(self.axis)
 
     def get_name(self):
-        return 'flip'
+        return 'flip%s' % ''.join([str(a) for a in self.axis])
 
 
 class Compose(Transform):
