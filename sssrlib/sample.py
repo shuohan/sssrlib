@@ -440,4 +440,5 @@ class SamplerCollection(Sampler):
             indices = patches.sample_indices(num)
             indices = list(zip([i] * num, indices))
             results += indices
+        random.shuffle(results)
         return results
