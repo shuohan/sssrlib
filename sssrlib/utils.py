@@ -62,7 +62,7 @@ def save_fig_3d(dirname, image, prefix):
     obj.to_filename(filename)
 
 
-def calc_avg_kernel(kernel_size):
+def calc_avg_kernel(agg_size, kernel_size=None):
     """Calculates a kernel that has the same values at all locations.
 
     Args:
@@ -72,7 +72,12 @@ def calc_avg_kernel(kernel_size):
         numpy.ndarray: The averaging kernel.
 
     """
-    kernel = np.ones(kernel_size, dtype=np.float32)
+    kernel_size = agg_size if kernel_size is None else kernel_size
+    lefts = [(k - a) // 2 for k, a in zip(kernel_size, agg_size)]
+    rights = [k - a - l for k, a, l in zip(kernel_size, agg_size, lefts)]
+    padding = list(zip(lefts, rights))
+    kernel = np.ones(agg_size, dtype=np.float32)
+    kernel = np.pad(kernel, padding)
     kernel = kernel / np.sum(kernel)
     return kernel
 

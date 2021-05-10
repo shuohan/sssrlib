@@ -11,7 +11,7 @@ import time
 
 from sssrlib.patches import Patches, PatchesCollection, TransformedPatches
 from sssrlib.sample import SamplerCollection, Sampler, ImageGradients
-from sssrlib.sample import SuppressWeights, GradSampleWeights
+from sssrlib.sample import SuppressWeights, SampleWeights, Aggregate
 from sssrlib.transform import Flip
 from sssrlib.utils import calc_avg_kernel
 
@@ -67,17 +67,22 @@ def test_patches():
 
     print('Create weights')
     start_time = time.time()
-    weights0 = GradSampleWeights(patches0, (grads0.gradients[1], ), agg_kernel=agg_kernel_yz)
+    agg0 = Aggregate(agg_kernel_yz, (grads0.gradients[1], ))
+    weights0 = SampleWeights(patches0, agg0.agg_images)
     weights0 = SuppressWeights(weights0, kernel_size=kernel_size, stride=stride)
 
-    weights11 = GradSampleWeights(patches1, (grads1.gradients[1], ), agg_kernel=agg_kernel_yz)
+    agg11 = Aggregate(agg_kernel_yz, (grads1.gradients[1], ))
+    agg12 = Aggregate(agg_kernel_yz, (grads1.gradients[2], ))
+    weights11 = SampleWeights(patches1, agg11.agg_images)
     weights11 = SuppressWeights(weights11, kernel_size=kernel_size, stride=stride)
-    weights12 = GradSampleWeights(patches1, (grads1.gradients[2], ), agg_kernel=agg_kernel_yz)
+    weights12 = SampleWeights(patches1, agg12.agg_images)
     weights12 = SuppressWeights(weights12, kernel_size=kernel_size, stride=stride)
 
-    weights20 = GradSampleWeights(patches2, (grads1.gradients[0], ), agg_kernel=agg_kernel_xz)
+    agg20 = Aggregate(agg_kernel_xz, (grads1.gradients[0], ))
+    agg22 = Aggregate(agg_kernel_xz, (grads1.gradients[2], ))
+    weights20 = SampleWeights(patches2, agg20.agg_images)
     weights20 = SuppressWeights(weights20, kernel_size=kernel_size, stride=stride)
-    weights22 = GradSampleWeights(patches2, (grads1.gradients[2], ), agg_kernel=agg_kernel_xz)
+    weights22 = SampleWeights(patches2, agg22.agg_images)
     weights22 = SuppressWeights(weights22, kernel_size=kernel_size, stride=stride)
     print('Time', time.time() - start_time)
 

@@ -20,7 +20,7 @@ class ProbOp(str, Enum):
     OR = 'or'
 
 
-class SampleWeights:
+class _SampleWeights:
     """Abstract class to calculate sample weights.
 
     """
@@ -161,21 +161,47 @@ class ImageGradients:
         return grads
 
 
-class GradSampleWeights(SampleWeights):
+class Aggregate:
+    """Weighted average within sliding windows.
+
+    Args:
+        kernel (numpy.ndarray): The kernel to aggregate values within sliding
+            windows.
+
+    """
+    def __init__(self, kernel, images):
+        self.kernel = torch.tensor(kernel)[None, None, ...]
+        self.images = images
+        self._agg_images = [self._aggregate(im) for im in self.images]
+
+    @property
+    def agg_images(self):
+        return self._agg_images
+
+    def _aggregate(self, image):
+        padding = calc_conv_padding(self.kernel.shape[2:])
+        pad = torch.nn.ReplicationPad3d(padding)
+        image_padded = pad(image[None, None, ...])
+        kernel = self.kernel.to(image)
+        result = F.conv3d(image_padded, kernel).squeeze(0).squeeze(0)
+        return result
+
+    def __str__(self):
+        return 'Aggregating kernel shape: {}'.format(self.kernel.shape)
+
+    def save_figures(self, dirname, d3=True):
+        save_fig(dirname, self.kernel, 'agg-kernel', d3=d3)
+        for i, im in enumerate(self._agg_images):
+            save_fig(dirname, im, 'agg-image-%d' % i, d3=d3)
+
+
+class SampleWeights(_SampleWeights):
     """Samples patches weighted by image gradients.
 
-    There are four steps to calculate image gradients:
-
-        * Aggregate all gradients within the patch size to the patch center,
-          so the patch center can represent the amount of all gradients
-          within each patch
-        * Interpolate the image back to the original shape
-
-    Suppose the sampling probability of a patch depends on gradients along
-    some of the axes, e.g., p(gx, gy). Further suppose the gradients are
-    independent from each other; therefore, p(gx, gy) = p(gx) p(gy). The
-    probabilty along an axis, e.g., p(gz), should be normalized across all
-    patches.
+    Suppose the sampling probability of a patch depends on gradients along some
+    of the axes, e.g., p(gx, gy), and the gradients are independent from
+    each other. Therefore, p(gx, gy) = p(gx) p(gy). The probabilty along an
+    axis, e.g., p(gz), should be normalized across all patches.
 
     If :attr:`weights_op` is OR, use fuzzy OR to combine p(gx) and p(gy)
     instead of p(gx) p(gy) (fuzzy AND).
@@ -183,20 +209,16 @@ class GradSampleWeights(SampleWeights):
     Attributes:
         patches (sssrlib.patches.AbstractPatches): The patches to calculate
             weights for.
-        grads (tuple[torch.Tensor]): The image gradient magnitude used to
-            calculate the sampling weights (can be a subset of all gradients).
+        weight_maps (tuple[torch.Tensor]): Multiple weight maps used to
+            calculate the sampling weights.
         weights_op (ProbOp): How to combine the probabilties calculated from
-            difrerent gradients.
-        agg_kernel (numpy.ndarray): The kernel to aggregate gradients to the
-            patch center.
+            difrerent weight maps.
 
     """
-    def __init__(self, patches, grads, weights_op=ProbOp.OR, agg_kernel=None):
+    def __init__(self, patches, weight_maps, weights_op=ProbOp.OR):
         super().__init__(patches)
-        self.grads = grads
+        self.weight_maps = weight_maps
         self.weights_op = ProbOp(weights_op)
-        self._init_agg_kernel(agg_kernel)
-        self._aggregate_grads()
         self._calc_sample_weights()
 
     @property
@@ -208,40 +230,13 @@ class GradSampleWeights(SampleWeights):
         return self._weights_flat
 
     def save_figures(self, dirname, d3=True):
-        if self.agg_kernel is not None:
-            save_fig(dirname, self.agg_kernel, 'agg-kernel', d3=d3)
-        for i, g in enumerate(self._agg_grads):
-            save_fig(dirname, g, 'agg-gradiant-%d' % i, d3=d3)
         save_fig(dirname, self._weights, 'weights', d3=d3)
 
     def __str__(self):
-        m = ['Weights operator: {}'.format(self.weights_op),
-             'Aggregating kernel shape: {}'.format(self.agg_kernel.shape)]
-        return '\n'.join(m)
-
-    def _init_agg_kernel(self, kernel):
-        if kernel is None:
-            self.agg_kernel = None
-        else:
-            kernel = padcrop3d(kernel, self.patches.patch_size, False)
-            kernel = torch.tensor(kernel, dtype=self.patches.image.dtype,
-                                  device=self.patches.image.device)
-            self.agg_kernel = kernel[None, None, ...]
-
-    def _aggregate_grads(self):
-        if self.agg_kernel is None:
-            self._agg_grads = self.grads
-        else:
-            self._agg_grads = [self._aggregate_grad(g) for g in self.grads]
-
-    def _aggregate_grad(self, grad):
-        padding = calc_conv_padding(self.patches.patch_size)
-        padded_grad = torch.nn.ConstantPad3d(padding, 0)(grad[None, None, ...])
-        agg_grad = F.conv3d(padded_grad, self.agg_kernel).squeeze(0).squeeze(0)
-        return agg_grad
+        return 'Weights operator: {}'.format(self.weights_op)
 
     def _calc_sample_weights(self):
-        weights = self._calc_weights_at_patch_center(self._agg_grads)
+        weights = self._calc_weights_at_patch_center(self.weight_maps)
         weights = [w / torch.sum(w) for w in weights]
         self._weights = self._combine_weights(weights)
         self._weights_flat = self._weights.flatten()
