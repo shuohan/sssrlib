@@ -1,9 +1,11 @@
+import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 from pathlib import Path
+from skimage.filters import threshold_multiotsu
 
 
 def save_fig(dirname, image, prefix, cmap='jet', d3=True):
@@ -67,7 +69,7 @@ def calc_avg_kernel(agg_size, kernel_size=None):
 
     Args:
         kernel_size (tuple[int]): The size of the kernel
-    
+
     Returns:
         numpy.ndarray: The averaging kernel.
 
@@ -99,3 +101,20 @@ def calc_conv_padding(kernel_shape):
         padding.insert(0, right)
         padding.insert(0, left)
     return tuple(padding)
+
+
+def calc_foreground_mask(image):
+    """Calculates foregournd mask using Otsu's threshould.
+
+    Args:
+        image (torch.Tensor): The image to calculate the mask from.
+
+    Returns:
+        torch.Tensor: The foreground mask.
+
+    """
+    numpy_image = image.detach().cpu().numpy()
+    thresholds = threshold_multiotsu(numpy_image)
+    fg = numpy_image > thresholds[0]
+    fg = torch.tensor(fg).to(image)
+    return fg
