@@ -80,7 +80,8 @@ class Patches(AbstractPatches):
             integer, it is assumed to be a 2D patch with the same size along x
             and y axes. To get 1D patches, its last two elements should be 1.
             To get 2D patches, its last one elements should be 1.
-        voxel_size (iterable[float]): The size of the voxel before permutation.
+        voxel_size (iterable[float]): The size of the voxel BEFORE permutation.
+            Note this is different from the attribute :attr:`voxel_size`.
 
     Attributes:
         patch_size (tuple[int]): The parsed patch size.
@@ -92,6 +93,7 @@ class Patches(AbstractPatches):
         z (image_processing_3d.Axis or int): The axis in the input ``image`` to
             permute to the z-axis in the result image.
         voxel_size (numpy.ndarray): The size of the voxel AFTER permutation.
+            Note this is different from the input argument ``voxel_size``.
         patches (Patches): Initialize from another patches.
         named (bool): If ``True``, return the patch index as well.
         squeeze (bool): If ``True``, squeeze sampled patches.
