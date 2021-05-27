@@ -159,7 +159,9 @@ class Patches(AbstractPatches):
 
     def _permute_image(self, image):
         """Permutes the input image."""
-        image = torch.tensor(image).float().contiguous()
+        if not isinstance(image, torch.Tensor):
+            image = torch.tensor(image)
+        image = image.float().contiguous()
         return permute3d(image, self.x, self.y, self.z)
 
     def _init_patch_numbers(self, shape=None):
