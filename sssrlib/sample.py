@@ -370,7 +370,7 @@ class Sampler:
         self.weights_flat = weights_flat
         self.weights_mapping = weights_mapping
 
-    def sample_indices(self, num_samples):
+    def sample_indices(self, num_samples, exclude=[]):
         """Returns patch indices to sample.
 
         Args:
@@ -380,8 +380,15 @@ class Sampler:
             list[int]: The sampled patch indices.
 
         """
+        if len(exclude) > 0:
+            assert self.weights_flat is None
+
         if self.weights_flat is None:
-            return random.choices(range(len(self.patches)), k=num_samples)
+            all_indices = range(len(self.patches))
+            if len(exclude) > 0:
+                all_indices = list(set(all_indices) - set(exclude))
+                assert len(all_indices) >= num_samples
+            return random.choices(all_indices, k=num_samples)
         else:
             indices = torch.multinomial(self.weights_flat, num_samples,
                                         replacement=True)
@@ -419,12 +426,17 @@ class SamplerCollection(Sampler):
         self._patches_collection = PatchesCollection(*patches)
 
     @property
+    def num_samplers(self):
+        return len(self._sampler_collection)
+
+    @property
     def patches(self):
         """It is used when calling parent method :meth:`get_patches`."""
         return self._patches_collection
 
-    def sample_indices(self, num_samples):
+    def sample_indices(self, num_samples, exclude=[]):
         num_patches = len(self._sampler_collection)
+        exclude = self._convert_exclude(exclude)
         patches_ind = random.choices(range(num_patches), k=num_samples)
         counts = np.bincount(patches_ind, minlength=num_patches)
         results = list()
@@ -432,8 +444,17 @@ class SamplerCollection(Sampler):
             if num == 0:
                 continue
             patches = self._sampler_collection[i]
-            indices = patches.sample_indices(num)
+            indices = patches.sample_indices(num, exclude=exclude[i])
             indices = list(zip([i] * num, indices))
             results += indices
         random.shuffle(results)
         return results
+
+    def _convert_exclude(self, exclude):
+        exclude = exclude[exclude[:, 0].argsort()]
+        indices, sections = np.unique(exclude[:,0], return_index=True)
+        exclude = np.split(exclude[:, 1], sections)[1:]
+        result = [[]] * len(self._sampler_collection)
+        for ind, exc in zip(indices, exclude):
+            result[ind] = list(exc)
+        return result
