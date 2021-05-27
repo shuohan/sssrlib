@@ -319,16 +319,20 @@ class PatchesCollection(AbstractPatches):
 
     """
     def __init__(self, *patches):
-        self._collection = list(patches)
-        assert len(np.unique([p.named for p in self._collection])) == 1
-        self.named = self._collection[0].named
+        self.sub_patches = list(patches)
+        assert len(np.unique([p.named for p in self.sub_patches])) == 1
+        self.named = self.sub_patches[0].named
+
+    @property
+    def num_sub_patches(self):
+        return len(self.sub_patches)
 
     def __len__(self):
-        return np.sum([len(p) for p in self._collection])
+        return np.sum([len(p) for p in self.sub_patches])
 
     def __str__(self):
         message = ['Patches #%d\n%s' % (i,  p.__str__())
-                   for i, p in enumerate(self._collection)]
+                   for i, p in enumerate(self.sub_patches)]
         message = '\n----------\n'.join(message)
         return message
 
@@ -340,10 +344,10 @@ class PatchesCollection(AbstractPatches):
                 second index is for a patch given the patches instance.
 
         """
-        patch = self._collection[ind[0]][ind[1]]
+        patch = self.sub_patches[ind[0]][ind[1]]
 
         if self.named:
-            num_digits = len(str(len(self._collection)))
+            num_digits = len(str(len(self.sub_patches)))
             pind = ('p%%0%dd' % num_digits) % ind[0]
             name = '_'.join([pind, patch.name])
             patch = NamedData(name, patch.data)
@@ -351,10 +355,10 @@ class PatchesCollection(AbstractPatches):
         return patch
 
     def append(self, patches):
-        self._collection.append(patches)
+        self.sub_patches.append(patches)
 
     def save_figures(self, dirname, d3=True):
-        num_digits = len(str(len(self._collection)))
-        for i, patch in enumerate(self._collection):
+        num_digits = len(str(len(self.sub_patches)))
+        for i, patch in enumerate(self.sub_patches):
             subdir = Path(dirname, ('%%0%dd' % num_digits) % i)
             patch.save_figures(subdir, d3=d3)
