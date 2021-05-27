@@ -113,8 +113,11 @@ def calc_foreground_mask(image):
         torch.Tensor: The foreground mask.
 
     """
-    numpy_image = image.detach().cpu().numpy()
+    numpy_image = image
+    if isinstance(image, torch.Tensor):
+        numpy_image = image.detach().cpu().numpy()
     thresholds = threshold_multiotsu(numpy_image)
     fg = numpy_image > thresholds[0]
-    fg = torch.tensor(fg).to(image)
+    if isinstance(image, torch.Tensor):
+        fg = torch.tensor(fg).to(image)
     return fg
