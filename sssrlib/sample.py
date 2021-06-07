@@ -387,6 +387,7 @@ class Sampler:
             all_indices = range(len(self.patches))
             if len(exclude) > 0:
                 all_indices = list(set(all_indices) - set(exclude))
+                print(all_indices)
                 assert len(all_indices) >= num_samples
             return random.choices(all_indices, k=num_samples)
         else:
@@ -451,10 +452,11 @@ class SamplerCollection(Sampler):
         return results
 
     def _convert_exclude(self, exclude):
-        exclude = exclude[exclude[:, 0].argsort()]
-        indices, sections = np.unique(exclude[:,0], return_index=True)
-        exclude = np.split(exclude[:, 1], sections)[1:]
         result = [[]] * len(self._sampler_collection)
-        for ind, exc in zip(indices, exclude):
-            result[ind] = list(exc)
+        if exclude:
+            exclude = exclude[exclude[:, 0].argsort()]
+            indices, sections = np.unique(exclude[:,0], return_index=True)
+            exclude = np.split(exclude[:, 1], sections)[1:]
+            for ind, exc in zip(indices, exclude):
+                result[ind] = list(exc)
         return result
