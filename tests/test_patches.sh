@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 dir=$(realpath $(dirname $0)/..)
-im_proc_3d_dir=~/Code/shuo/utils/image-processing-3d
+im_proc_3d_dir=~/Code/shuo/utils/improc3d
 
 docker run --gpus device=1 --rm -v $dir:$dir \
     -v $im_proc_3d_dir:$im_proc_3d_dir \
