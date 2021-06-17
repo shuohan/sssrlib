@@ -2,7 +2,7 @@ import os
 from setuptools import setup, find_packages
 from glob import glob
 
-version = '0.2.0'
+version = '0.3.0'
 
 setup(name='sssrlib',
       version=version,
@@ -12,13 +12,17 @@ setup(name='sssrlib',
       author_email='shan50@jhu.edu',
       license='GPLv3',
       packages=['sssrlib'],
-      python_requires='>=3.7.7',
-      install_requires=['scipy>=1.5.2',
-                        'matplotlib>=3.3.2',
-                        'improc3d>=0.5.2',
-                        'numpy>=1.18.5',
-                        'torch>=1.6.0'],
-      classifiers=['Programming Language :: Python :: 3',
-                   'License :: OSI Approved :: MIT License',
-                   'Operating System :: OS Independent']
-      )
+      python_requires='>=3.7.10',
+      install_requires=[
+          'scipy',
+          'matplotlib',
+          'improc3d',
+          'numpy',
+          'torch>=1.8.1'
+      ],
+      classifiers=[
+          'Programming Language :: Python :: 3',
+          'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+          'Operating System :: OS Independent'
+      ]
+     )
