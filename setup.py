@@ -18,6 +18,7 @@ setup(name='sssrlib',
           'matplotlib',
           'improc3d',
           'numpy',
+          'scikit-image',
           'torch>=1.8.1'
       ],
       classifiers=[
